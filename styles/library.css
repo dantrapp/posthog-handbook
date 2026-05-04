@@ -437,6 +437,32 @@ th {
   text-decoration: none;
 }
 
+.topic-ebooks {
+  background: var(--warm);
+  border: 1px solid #edcf9f;
+  border-radius: 8px;
+  margin: 36px 0;
+  padding: 22px;
+}
+
+.topic-ebooks h2 {
+  border: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.topic-ebooks .section-note {
+  margin-top: 0;
+}
+
+.featured-topic-grid .small-download {
+  background: var(--paper);
+}
+
+.featured-topic-grid .small-download:hover {
+  border-color: var(--accent);
+}
+
 .small-download strong,
 .small-download span {
   display: block;

@@ -750,21 +750,22 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
         <strong>Company Narrative eBook</strong>
         <span>A shorter front-door edition for casual reading${bytes(companyEbook) ? ` · ${bytes(companyEbook)}` : ""}</span>
       </a>
-      <a class="download-card" href="${escapeHtml(printHtml?.path || "#")}">
-        <strong>Print or Save as PDF</strong>
-        <span>Open this HTML page and use your browser's print dialog</span>
+      <a class="download-card" href="#topic-ebooks">
+        <strong>Topic eBooks</strong>
+        <span>Download only Engineering, Growth, People, Product, and other sections</span>
       </a>
     </div>
+  </section>
+  <section id="topic-ebooks" class="topic-ebooks">
+    <p class="eyebrow">Smaller downloads</p>
+    <h2>Download a Topic eBook</h2>
+    <p class="section-note">Want just one part of the Handbook? These are standalone eBook files for each topic. The complete Handbook eBook above still includes everything.</p>
+    <div class="compact-download-grid featured-topic-grid">${sectionEbookItems}</div>
   </section>
   <section>
     <h2>Browse by Section</h2>
     <p class="section-note">These links are the web version of the Handbook organized by topic. You do not need to choose a section to get the full eBook.</p>
     <ol class="section-list">${sectionItems}</ol>
-    <details class="optional-panel">
-      <summary>Download topic-only eBooks</summary>
-      <p>If you only want one part of the Handbook, use these smaller files. Otherwise, download the complete Handbook eBook above.</p>
-      <div class="compact-download-grid">${sectionEbookItems}</div>
-    </details>
   </section>
   <section class="supporting-info">
     <h2>Updates and Technical Files</h2>
