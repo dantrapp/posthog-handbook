@@ -15,6 +15,8 @@ const RAW_BASE = `https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REF}
 const GITHUB_BASE = `https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}/`;
 const USER_AGENT = "posthog-handbook-library/0.1";
 const GENERATOR_VERSION = "0.2.2";
+const AT_A_GLANCE_MIN_WORDS = 1200;
+const AT_A_GLANCE_MAX_ITEMS = 8;
 const COMPANY_ORDER = [
   "contents/handbook/why-does-posthog-exist.md",
   "contents/handbook/story.md",
@@ -297,19 +299,32 @@ function adaptSelfClosingMdxComponent(componentName, attrs) {
   if (componentName === "TeamMember") {
     return mdxAttribute(attrs, "name") || "";
   }
-  if (componentName === "NewsletterForm") {
+  if (componentName === "SmallTeam") {
+    const name = mdxAttribute(attrs, "name") || mdxAttribute(attrs, "title");
+    return name ? `${name} team` : "";
+  }
+  if (componentName === "Emoji") {
+    return mdxAttribute(attrs, "emoji") || mdxAttribute(attrs, "name") || "";
+  }
+  if (componentName === "NewsletterForm" || componentName === "ProductScreenshot" || componentName === "ProductVideo") {
     return "";
   }
   return mdxAttribute(attrs, "title")
+    || mdxAttribute(attrs, "alt")
     || mdxAttribute(attrs, "label")
     || mdxAttribute(attrs, "name")
     || "";
 }
 
 function adaptInlineMdx(line) {
-  return line.replace(/<([A-Z][A-Za-z0-9_.]*)\b([^>]*)\/>/g, (_match, componentName, attrs) => {
+  let adapted = line.replace(/<([A-Z][A-Za-z0-9_.]*)\b([^>]*)>([^<]+)<\/\1>/g, (_match, componentName, attrs, children) => {
+    const childText = children.trim();
+    return childText || adaptSelfClosingMdxComponent(componentName, attrs).trim();
+  });
+  adapted = adapted.replace(/<([A-Z][A-Za-z0-9_.]*)\b([^>]*)\/>/g, (_match, componentName, attrs) => {
     return adaptSelfClosingMdxComponent(componentName, attrs).trim();
   });
+  return adapted;
 }
 
 function mdxWarnings(markdown) {
@@ -330,6 +345,7 @@ function normalizeMarkdown(markdown) {
   for (const line of body.split("\n")) {
     const stripped = line.trim();
     if (stripped.startsWith("import ")) continue;
+    if (/^\{\/\*.*\*\/\}\s*$/.test(stripped)) continue;
     if (/^<\/[A-Z][A-Za-z0-9_.]*>\s*$/.test(stripped)) continue;
     const blockComponent = stripped.match(/^<([A-Z][A-Za-z0-9_.]*)\b([^>]*)>\s*$/);
     if (blockComponent) continue;
@@ -543,6 +559,35 @@ function pageHref(page) {
   return `pages/${page.id}.html`;
 }
 
+function articleBriefItems(page) {
+  if (page.wordCount < AT_A_GLANCE_MIN_WORDS) return [];
+  const pageTitle = plainText(page.title).toLowerCase();
+  const seen = new Set();
+  const items = [];
+  for (const heading of page.headings) {
+    const label = plainText(heading);
+    if (!label || label.toLowerCase() === pageTitle) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({ label, href: `#${slugify(heading)}` });
+    if (items.length >= AT_A_GLANCE_MAX_ITEMS) break;
+  }
+  return items;
+}
+
+function renderArticleBrief(page) {
+  const items = articleBriefItems(page);
+  if (items.length < 3) return "";
+  const list = items.map((item) => `<li><a href="${escapeHtml(item.href)}">${escapeHtml(item.label)}</a></li>`).join("\n");
+  return `<section class="article-brief" aria-label="Article at a glance">
+  <p class="eyebrow">Auto TL;DR</p>
+  <h2>At a Glance</h2>
+  <p>This long page covers these main areas. The list is generated from the article headings, so it updates with every handbook rebuild.</p>
+  <ol>${list}</ol>
+</section>`;
+}
+
 function htmlShell(title, body, relativeCss = "assets/library.css") {
   return `<!doctype html>
 <html lang="en">
@@ -676,6 +721,11 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     <div class="metric"><strong>${sections.length}</strong> web sections for browsing</div>
     <div class="metric"><strong>Weekly</strong> automatic rebuilds</div>
   </section>
+  <section class="about-edition">
+    <h2>What This Is</h2>
+    <p>This is an unofficial reader edition built for search, browsing, offline reading, and mobile/tablet eBook apps. It is generated from PostHog's public handbook source and links every page back to the canonical live handbook.</p>
+    <p>The full eBook is the simplest choice. Section eBooks and technical files are optional extras for people who want a smaller topic file or want to inspect the build.</p>
+  </section>
   <section class="reader-tools">
     <label for="library-search">Search the generated handbook</label>
     <input id="library-search" type="search" data-search-input disabled placeholder="Loading search index..." autocomplete="off">
@@ -759,6 +809,7 @@ function renderPage(page) {
   <article>
     <h1>${escapeHtml(page.title)}</h1>
     <p class="build-note">${page.wordCount.toLocaleString()} words. Estimated reading time: ${page.readingTimeMinutes} min.</p>
+    ${renderArticleBrief(page)}
     ${page.html}
   </article>
   <section class="source-list">
@@ -840,11 +891,12 @@ ${extra}
 
 function renderEpubCover(title, subtitle, pages, buildDate) {
   const body = `<section class="cover">
+  <p class="kicker">Unofficial living edition</p>
   <h1>${escapeHtml(title)}</h1>
-  <p class="build-note">${escapeHtml(subtitle)}</p>
-  <p>Generated ${escapeHtml(buildDate)} from PostHog's public handbook source.</p>
-  <p>The live handbook at <a href="${BASE_URL}/handbook">${BASE_URL}/handbook</a> remains canonical.</p>
-  <p>${pages.length} pages included.</p>
+  <p class="subtitle">${escapeHtml(subtitle)}</p>
+  <p class="build-note">Generated ${escapeHtml(buildDate)} from PostHog's public handbook source.</p>
+  <p>${pages.length} pages included. Built for offline reading, tablets, phones, and eBook apps.</p>
+  <p>The live handbook at <a href="${BASE_URL}/handbook">${BASE_URL}/handbook</a> remains the source of truth.</p>
 </section>`;
   return xhtmlShell(title, body);
 }
@@ -852,6 +904,7 @@ function renderEpubCover(title, subtitle, pages, buildDate) {
 function renderEpubNav(title, pages) {
   const items = pages.map((page, index) => `<li><a href="pages/${escapeHtml(page.id)}.xhtml">${index + 1}. ${escapeHtml(page.title)}</a></li>`).join("\n");
   const body = `<nav epub:type="toc" id="toc">
+  <p class="kicker">Contents</p>
   <h1>${escapeHtml(title)}</h1>
   <ol>
     <li><a href="cover.xhtml">Cover</a></li>
@@ -865,6 +918,7 @@ function renderEpubPage(page, index) {
   const body = `<article>
   <h1>${index + 1}. ${escapeHtml(page.title)}</h1>
   <p class="build-note">Source: <a href="${escapeHtml(page.canonicalUrl)}">${escapeHtml(page.canonicalUrl)}</a></p>
+  ${renderArticleBrief(page)}
   ${page.html}
 </article>`;
   return xhtmlShell(page.title, body);
@@ -1351,6 +1405,7 @@ export {
   buildZip,
   canonicalPath,
   compareManifests,
+  articleBriefItems,
   markdownToHtml,
   sectionFor,
   serializeDiff,
