@@ -609,6 +609,10 @@ function htmlShell(title, body, relativeCss = "assets/library.css") {
 <body>
 ${body}
 <script>
+window.PostHogReader = { root: "${rootPrefix}", assetVersion: "${version}" };
+</script>
+<script src="${rootPrefix}assets/reader.js?v=${version}"></script>
+<script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("${rootPrefix}service-worker.js?v=${version}").catch(() => {});
@@ -677,6 +681,7 @@ function renderServiceWorker({ pages, sections, buildDate }) {
     "offline.html",
     `assets/library.css?v=${assetVersion}`,
     `assets/search.js?v=${assetVersion}`,
+    `assets/reader.js?v=${assetVersion}`,
     `assets/icon.svg?v=${assetVersion}`,
     ...sections.map((section) => `sections/${section.id}.html`),
     ...pages.map((page) => pageHref(page)),
@@ -784,6 +789,165 @@ if (input && results && status) {
 `;
 }
 
+function renderReaderAppScript() {
+  return `const CONFIG = window.PostHogReader || { root: "./", assetVersion: "" };
+const ROOT = CONFIG.root || "./";
+const VERSION = CONFIG.assetVersion || "";
+const STORAGE = {
+  saved: "posthog-handbook:saved",
+  recent: "posthog-handbook:recent",
+  lastSeen: "posthog-handbook:last-seen-edition",
+};
+
+function readJSON(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJSON(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+function escapeHTML(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function pageUrl() {
+  return location.href.split("#")[0];
+}
+
+function trimItems(items, limit) {
+  return items
+    .filter((item) => item && item.url && item.title)
+    .filter((item, index, all) => all.findIndex((candidate) => candidate.url === item.url) === index)
+    .slice(0, limit);
+}
+
+function currentPageMeta() {
+  const node = document.querySelector("[data-reader-page]");
+  if (!node) return null;
+  return {
+    title: node.dataset.pageTitle || document.title,
+    section: node.dataset.pageSection || "Handbook",
+    url: pageUrl(),
+    readAt: new Date().toISOString(),
+  };
+}
+
+function saveRecent(meta) {
+  if (!meta) return;
+  const recent = readJSON(STORAGE.recent, []);
+  writeJSON(STORAGE.recent, trimItems([meta, ...recent], 8));
+}
+
+function savedPages() {
+  return readJSON(STORAGE.saved, []);
+}
+
+function isSaved(url) {
+  return savedPages().some((item) => item.url === url);
+}
+
+function updateBookmarkButton(button, saved) {
+  button.textContent = saved ? "Saved" : "Save page";
+  button.setAttribute("aria-pressed", saved ? "true" : "false");
+}
+
+function setupBookmark(meta) {
+  const button = document.querySelector("[data-bookmark-button]");
+  if (!button || !meta) return;
+  updateBookmarkButton(button, isSaved(meta.url));
+  button.addEventListener("click", () => {
+    const saved = savedPages();
+    if (saved.some((item) => item.url === meta.url)) {
+      writeJSON(STORAGE.saved, saved.filter((item) => item.url !== meta.url));
+      updateBookmarkButton(button, false);
+    } else {
+      writeJSON(STORAGE.saved, trimItems([{ ...meta, savedAt: new Date().toISOString() }, ...saved], 24));
+      updateBookmarkButton(button, true);
+    }
+    renderDashboard();
+  });
+}
+
+function renderList(target, items, emptyText) {
+  if (!target) return;
+  if (!items.length) {
+    target.innerHTML = \`<li class="empty-state">\${escapeHTML(emptyText)}</li>\`;
+    return;
+  }
+  target.innerHTML = items.map((item) => \`<li>
+    <a href="\${escapeHTML(item.url)}">\${escapeHTML(item.title)}</a>
+    <span>\${escapeHTML(item.section || "Handbook")}</span>
+  </li>\`).join("");
+}
+
+async function offlineCount() {
+  if (!("caches" in window)) return null;
+  const names = await caches.keys();
+  const cacheName = names.find((name) => name.startsWith("posthog-handbook-"));
+  if (!cacheName) return null;
+  const cache = await caches.open(cacheName);
+  return (await cache.keys()).length;
+}
+
+async function loadManifest() {
+  const response = await fetch(\`\${ROOT}manifest.json?v=\${encodeURIComponent(VERSION)}\`);
+  return response.json();
+}
+
+function setText(selector, text) {
+  const node = document.querySelector(selector);
+  if (node) node.textContent = text;
+}
+
+async function renderDashboard() {
+  const dashboard = document.querySelector("[data-reader-dashboard]");
+  if (!dashboard) return;
+  const recent = readJSON(STORAGE.recent, []);
+  const saved = savedPages();
+  setText("[data-saved-count]", String(saved.length));
+  setText("[data-recent-count]", String(recent.length));
+  renderList(document.querySelector("[data-recent-list]"), recent.slice(0, 4), "Open a page and it will appear here.");
+  renderList(document.querySelector("[data-saved-list]"), saved.slice(0, 4), "Save useful pages as you read.");
+  try {
+    const manifest = await loadManifest();
+    const previous = localStorage.getItem(STORAGE.lastSeen);
+    setText("[data-reader-edition]", manifest.generatedAt || "Current");
+    if (previous && previous !== manifest.generatedAt) {
+      setText("[data-edition-note]", \`New since your last visit: \${manifest.generatedAt}\`);
+    } else {
+      setText("[data-edition-note]", "Current generated edition");
+    }
+    localStorage.setItem(STORAGE.lastSeen, manifest.generatedAt || "");
+  } catch {
+    setText("[data-edition-note]", "Edition metadata unavailable offline");
+  }
+  try {
+    const count = await offlineCount();
+    setText("[data-offline-status]", count ? "Ready" : "Open once online");
+    setText("[data-offline-note]", count ? \`\${count.toLocaleString()} cached files\` : "Cache builds after first visit");
+  } catch {
+    setText("[data-offline-status]", "Browser managed");
+  }
+}
+
+const meta = currentPageMeta();
+saveRecent(meta);
+setupBookmark(meta);
+renderDashboard();
+`;
+}
+
 function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] }) {
   const sectionItems = sections.map((section) => {
     return `<li><a href="sections/${section.id}.html">${escapeHtml(section.title)}</a> <span>${section.pages.length} pages</span></li>`;
@@ -848,6 +1012,31 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
       <p class="utility-links"><span>${pages.length} pages</span><span>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()} words</span><span>${sections.length} sections</span><a href="${PROJECT_REPO_URL}">Source repo</a></p>
     </section>
   </header>
+  <section class="reader-dashboard" data-reader-dashboard>
+    <div class="dashboard-header">
+      <div>
+        <p class="eyebrow">Your reader</p>
+        <h2>Personal Handbook Copy</h2>
+        <p>This lives in your browser: recent pages, saved pages, offline cache status, and edition awareness.</p>
+      </div>
+    </div>
+    <div class="dashboard-stats" aria-label="Reader status">
+      <div class="dashboard-stat"><strong data-reader-edition>${escapeHtml(buildDate)}</strong><span data-edition-note>Current generated edition</span></div>
+      <div class="dashboard-stat"><strong data-offline-status>Checking</strong><span data-offline-note>Offline cache status</span></div>
+      <div class="dashboard-stat"><strong data-saved-count>0</strong><span>saved pages</span></div>
+      <div class="dashboard-stat"><strong data-recent-count>0</strong><span>recent reads</span></div>
+    </div>
+    <div class="dashboard-lists">
+      <section>
+        <h3>Continue Reading</h3>
+        <ol data-recent-list><li class="empty-state">Open a page and it will appear here.</li></ol>
+      </section>
+      <section>
+        <h3>Saved Pages</h3>
+        <ol data-saved-list><li class="empty-state">Save useful pages as you read.</li></ol>
+      </section>
+    </div>
+  </section>
   <section class="reader-tools">
     <label for="library-search">Search the generated handbook</label>
     <input id="library-search" type="search" data-search-input disabled placeholder="Loading search index..." autocomplete="off">
@@ -907,9 +1096,12 @@ function renderPage(page) {
   }).join("\n");
   const body = `<main class="site-shell reader">
   <p class="kicker"><a href="../index.html">PostHog Handbook Library</a>${page.section ? ` / ${escapeHtml(titleCaseSegment(page.section))}` : ""}</p>
-  <article>
+  <article data-reader-page data-page-title="${escapeHtml(page.title)}" data-page-section="${escapeHtml(page.section ? titleCaseSegment(page.section) : "Handbook Front Door")}">
+    <div class="article-topline">
+      <p class="build-note">${page.wordCount.toLocaleString()} words. Estimated reading time: ${page.readingTimeMinutes} min.</p>
+      <button class="button bookmark-button" type="button" data-bookmark-button aria-pressed="false">Save page</button>
+    </div>
     <h1>${escapeHtml(page.title)}</h1>
-    <p class="build-note">${page.wordCount.toLocaleString()} words. Estimated reading time: ${page.readingTimeMinutes} min.</p>
     ${renderArticleBrief(page)}
     ${page.html}
   </article>
@@ -1264,9 +1456,10 @@ async function commandBuild(args) {
   }
   const sections = groupSections(pages);
   const cssSource = await readFile("styles/library.css", "utf8");
-  assetVersion = hash(`${GENERATOR_VERSION}:${cssSource}`).slice(0, 12);
+  assetVersion = hash(`${GENERATOR_VERSION}:${cssSource}:${renderSearchScript()}:${renderReaderAppScript()}:${renderIconSvg()}`).slice(0, 12);
   await cp("styles/library.css", path.join(outDir, "assets/library.css"));
   await writeFile(path.join(outDir, "assets/search.js"), renderSearchScript());
+  await writeFile(path.join(outDir, "assets/reader.js"), renderReaderAppScript());
   await writeFile(path.join(outDir, "assets/icon.svg"), renderIconSvg());
   await writeFile(path.join(outDir, "site.webmanifest"), renderWebManifest(buildDate));
   await writeFile(path.join(outDir, "offline.html"), renderOfflineHtml(buildDate));
@@ -1411,7 +1604,7 @@ async function commandValidate(args) {
   const manifestPath = path.join(dist, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const failures = [];
-  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "site.webmanifest", "offline.html", "service-worker.js", "assets/library.css", "assets/search.js", "assets/icon.svg", ".nojekyll"];
+  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "site.webmanifest", "offline.html", "service-worker.js", "assets/library.css", "assets/search.js", "assets/reader.js", "assets/icon.svg", ".nojekyll"];
   for (const file of required) {
     const target = path.join(dist, file);
     if (!(await exists(target))) failures.push(`Missing ${file}`);

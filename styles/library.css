@@ -301,6 +301,106 @@ th {
   padding: 18px;
 }
 
+.reader-dashboard {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 32px 0;
+  padding: 20px;
+}
+
+.dashboard-header {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dashboard-header h2 {
+  border: 0;
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.dashboard-header p {
+  margin: 0;
+}
+
+.dashboard-header p:not(.eyebrow) {
+  color: var(--muted);
+  max-width: 760px;
+}
+
+.dashboard-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.dashboard-stat {
+  background: var(--wash);
+  border: 1px solid #d3ded4;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.dashboard-stat strong,
+.dashboard-stat span {
+  display: block;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dashboard-stat strong {
+  font-size: 1.25rem;
+}
+
+.dashboard-stat span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.dashboard-lists {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  margin-top: 18px;
+}
+
+.dashboard-lists section {
+  min-width: 0;
+}
+
+.dashboard-lists h3 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.dashboard-lists ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-lists li {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+}
+
+.dashboard-lists a,
+.dashboard-lists span {
+  display: block;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dashboard-lists a {
+  font-weight: 800;
+  text-decoration-thickness: 1px;
+}
+
+.dashboard-lists span,
+.empty-state {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .about-edition {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
@@ -374,6 +474,24 @@ th {
 .article-brief li {
   break-inside: avoid;
   margin-bottom: 6px;
+}
+
+.article-topline {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.article-topline .build-note {
+  margin: 0;
+}
+
+.bookmark-button[aria-pressed="true"] {
+  background: #f2f7f3;
+  border-color: #b7d0bf;
+  color: var(--evergreen);
 }
 
 .reader-tools label {
@@ -631,5 +749,10 @@ th {
 
   .hero-actions {
     min-width: 0;
+  }
+
+  .article-topline {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
