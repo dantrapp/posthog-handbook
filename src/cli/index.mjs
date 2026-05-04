@@ -812,68 +812,44 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
   <header class="library-header hero">
     <p class="kicker">Unofficial living edition · Generated ${escapeHtml(buildDate)}</p>
     <h1>PostHog Handbook Library</h1>
-    <p class="lede">Use the installable web reader for the freshest edition, or download dated eBook snapshots for offline reading in book apps.</p>
+    <p class="lede">A searchable, installable reader for PostHog's public handbook, plus dated eBook editions when you want a file for a book app.</p>
     <p class="build-note">Built from <a href="https://posthog.com/handbook">PostHog's live handbook</a>. The live handbook remains canonical.</p>
-    <div class="hero-panel">
-      <div>
-        <p class="eyebrow">Recommended</p>
-        <h2>Start with the living reader</h2>
-        <p>The web reader is the update path: it rebuilds from PostHog's public source, works offline after caching, and points to the newest generated eBooks.</p>
+    <section class="format-guide" aria-labelledby="reading-options">
+      <div class="format-guide-header">
+        <h2 id="reading-options">Pick the right format</h2>
+        <p>The living reader stays current after rebuilds. eBooks are useful offline snapshots and should be re-downloaded when a new edition appears.</p>
       </div>
-      <div class="hero-actions">
-        <a class="button primary large" href="#library-search">Search the live reader</a>
-        <a class="button large" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
-        <a class="button large" href="#topic-ebooks">Topic eBooks</a>
-        <a class="button large" href="${PROJECT_REPO_URL}">View source repo</a>
+      <div class="format-grid">
+        <article class="format-card recommended">
+          <p class="eyebrow">Best for most readers</p>
+          <h3>Living web reader</h3>
+          <p>Search, browse, and add to your phone's home screen. It can cache pages for offline reading, then refresh after new GitHub Actions builds.</p>
+          <div class="card-actions">
+            <a class="button primary" href="#library-search">Search reader</a>
+            <a class="button" href="changes.html">Latest changes</a>
+          </div>
+        </article>
+        <article class="format-card">
+          <p class="eyebrow">Best for book apps</p>
+          <h3>Complete eBook snapshot</h3>
+          <p>One dated EPUB with all ${pages.length} pages for Apple Books, Kindle apps, tablets, flights, and focused offline reading.</p>
+          <a class="button" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
+        </article>
+        <article class="format-card">
+          <p class="eyebrow">Best for one team</p>
+          <h3>Topic eBooks</h3>
+          <p>Smaller EPUBs for Engineering, Growth, People, Product, and other handbook sections.</p>
+          <a class="button" href="#topic-ebooks">Choose a topic</a>
+        </article>
       </div>
-    </div>
+      <p class="utility-links"><span>${pages.length} pages</span><span>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()} words</span><span>${sections.length} sections</span><a href="${PROJECT_REPO_URL}">Source repo</a></p>
+    </section>
   </header>
-  <section class="summary-grid" aria-label="Build summary">
-    <div class="metric"><strong>${pages.length}</strong> pages in the full eBook</div>
-    <div class="metric"><strong>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()}</strong> words</div>
-    <div class="metric"><strong>${sections.length}</strong> web sections for browsing</div>
-    <div class="metric"><strong>Installable</strong> offline web reader</div>
-  </section>
-  <section class="about-edition">
-    <h2>What This Is</h2>
-    <p>This is an unofficial reader edition built for search, browsing, offline reading, and mobile/tablet eBook apps. It is generated from PostHog's public handbook source and links every page back to the canonical live handbook.</p>
-    <p>The website is the living edition. Downloaded eBooks are dated snapshots: useful for Apple Books, Kindle apps, tablets, and flights, but they should be re-downloaded when a newer edition appears.</p>
-  </section>
-  <section class="living-note">
-    <div>
-      <p class="eyebrow">Best phone experience</p>
-      <h2>Install the Living Reader</h2>
-      <p>On mobile, add this site to your home screen. Your browser can cache the generated pages for offline reading, then refresh them when the GitHub Actions rebuild publishes a newer edition.</p>
-    </div>
-    <a class="button" href="changes.html">See latest changes</a>
-  </section>
   <section class="reader-tools">
     <label for="library-search">Search the generated handbook</label>
     <input id="library-search" type="search" data-search-input disabled placeholder="Loading search index..." autocomplete="off">
     <p class="search-status" data-search-status>Loading search index...</p>
     <ol class="search-results" data-search-results></ol>
-  </section>
-  <section class="choice-section">
-    <h2>Choose Your Reading Mode</h2>
-    <div class="download-grid primary-downloads">
-      <a class="download-card featured-download" href="${escapeHtml(libraryEbook?.path || "#")}">
-        <span class="pill">Best book-app file</span>
-        <strong>Complete Handbook eBook</strong>
-        <span>All ${pages.length} pages in one dated snapshot${bytes(libraryEbook) ? ` · ${bytes(libraryEbook)}` : ""}</span>
-      </a>
-      <a class="download-card" href="#library-search">
-        <strong>Installable Web Reader</strong>
-        <span>Best for a living phone copy, search, and automatic refreshes</span>
-      </a>
-      <a class="download-card" href="${escapeHtml(companyEbook?.path || "#")}">
-        <strong>Company Narrative eBook</strong>
-        <span>A shorter front-door edition for casual reading${bytes(companyEbook) ? ` · ${bytes(companyEbook)}` : ""}</span>
-      </a>
-      <a class="download-card" href="#topic-ebooks">
-        <strong>Topic eBooks</strong>
-        <span>Download only Engineering, Growth, People, Product, and other sections</span>
-      </a>
-    </div>
   </section>
   <section id="topic-ebooks" class="topic-ebooks">
     <p class="eyebrow">Smaller downloads</p>
