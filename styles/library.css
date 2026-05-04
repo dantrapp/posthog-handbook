@@ -245,6 +245,32 @@ th {
   max-width: 820px;
 }
 
+.living-note {
+  align-items: center;
+  background: #f2f7f3;
+  border: 1px solid #b7d0bf;
+  border-radius: 8px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin: 30px 0;
+  padding: 20px;
+}
+
+.living-note h2 {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.living-note p {
+  margin: 0;
+}
+
+.living-note .eyebrow {
+  margin-bottom: 6px;
+}
+
 .article-brief {
   background: #f2f7f3;
   border-left: 4px solid var(--evergreen);
@@ -521,6 +547,11 @@ th {
 
 @media (max-width: 720px) {
   .hero-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-actions,
+  .living-note {
     grid-template-columns: 1fr;
   }
 

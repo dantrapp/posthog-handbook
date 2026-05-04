@@ -13,6 +13,9 @@ No terminal required.
 - Open the searchable reader: https://dantrapp.github.io/posthog-handbook/
 - Use it to search the handbook, browse by section, and download the full mobile-friendly eBook.
 - Optional smaller section eBooks are available inside the reader for people who only want one topic.
+- For the most current phone experience, add the reader site to your home screen. The installed web reader can cache generated pages for offline reading and refresh when a new build is published.
+
+Downloaded eBooks are dated snapshots. They are useful in Apple Books, Kindle apps, and other offline reading apps, but they should be re-downloaded when a newer edition is published.
 
 ## What It Builds
 
@@ -20,6 +23,7 @@ Every generated edition includes source links and a generated date.
 
 - Complete HTML handbook library
 - Searchable hosted reader site
+- Installable offline-friendly web reader
 - Company narrative HTML edition
 - Complete-library eBook
 - Company narrative eBook
@@ -42,6 +46,8 @@ GitHub Actions does the living-book work:
 7. Publishes a dated GitHub Release with eBooks, the HTML archive, manifest, and changes.
 
 That is the product idea: do not pretend the handbook is stable. Rebuild it, timestamp it, attribute it, and show the diff.
+
+The living edition is the hosted reader. The eBooks are generated editions with links back to the latest reader, because EPUB files installed in book apps do not update themselves.
 
 ## For Developers
 

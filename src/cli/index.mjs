@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const BASE_URL = "https://posthog.com";
 const PROJECT_REPO_URL = "https://github.com/dantrapp/posthog-handbook";
+const PUBLIC_READER_URL = "https://dantrapp.github.io/posthog-handbook/";
 const SOURCE_REPO = "PostHog/posthog.com";
 const SOURCE_REF = "master";
 const TREE_API = `https://api.github.com/repos/${SOURCE_REPO}/git/trees/${SOURCE_REF}?recursive=1`;
@@ -590,18 +591,127 @@ function renderArticleBrief(page) {
 }
 
 function htmlShell(title, body, relativeCss = "assets/library.css") {
+  const rootPrefix = relativeCss.startsWith("../") ? "../" : "";
   return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
+  <meta name="theme-color" content="#fbfaf6">
+  <link rel="manifest" href="${rootPrefix}site.webmanifest">
+  <link rel="icon" href="${rootPrefix}assets/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="${relativeCss}">
 </head>
 <body>
 ${body}
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("${rootPrefix}service-worker.js").catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
+`;
+}
+
+function renderWebManifest(buildDate) {
+  return `${JSON.stringify({
+    name: "PostHog Handbook Library",
+    short_name: "PostHog Handbook",
+    description: "An unofficial living reader edition of PostHog's public handbook.",
+    start_url: "./",
+    scope: "./",
+    display: "standalone",
+    background_color: "#fbfaf6",
+    theme_color: "#fbfaf6",
+    id: PUBLIC_READER_URL,
+    categories: ["books", "education", "productivity"],
+    icons: [
+      { src: "assets/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
+    ],
+    shortcuts: [
+      { name: "Search Handbook", url: "./#library-search", description: "Search the generated handbook reader" },
+      { name: "Latest Changes", url: "./changes.html", description: `See what changed in the ${buildDate} edition` },
+    ],
+  }, null, 2)}\n`;
+}
+
+function renderIconSvg() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="PostHog Handbook Library">
+  <rect width="512" height="512" rx="96" fill="#fbfaf6"/>
+  <path d="M116 142h280v228H116z" fill="#fff0d8" stroke="#201f1b" stroke-width="20" stroke-linejoin="round"/>
+  <path d="M170 142v228M116 196h280" stroke="#201f1b" stroke-width="20" stroke-linecap="round"/>
+  <path d="M218 260h126M218 312h96" stroke="#d45f2c" stroke-width="22" stroke-linecap="round"/>
+</svg>
+`;
+}
+
+function renderOfflineHtml(buildDate) {
+  const body = `<main class="site-shell reader">
+  <p class="kicker">Offline reader</p>
+  <h1>PostHog Handbook Library</h1>
+  <p>This generated reader is designed to work offline after your browser has cached it. Reconnect to get the newest rebuilt edition.</p>
+  <p class="build-note">This offline fallback was generated ${escapeHtml(buildDate)}. The live reader at <a href="${PUBLIC_READER_URL}">${PUBLIC_READER_URL}</a> is the best place to check for updates.</p>
+  <p><a class="button primary" href="index.html">Return to the library</a></p>
+</main>`;
+  return htmlShell("PostHog Handbook Library Offline", body);
+}
+
+function renderServiceWorker({ pages, sections, buildDate }) {
+  const paths = [
+    "./",
+    "index.html",
+    "company.html",
+    "print.html",
+    "changes.html",
+    "changes.md",
+    "manifest.json",
+    "search-index.json",
+    "site.webmanifest",
+    "offline.html",
+    "assets/library.css",
+    "assets/search.js",
+    "assets/icon.svg",
+    ...sections.map((section) => `sections/${section.id}.html`),
+    ...pages.map((page) => pageHref(page)),
+  ];
+  return `const CACHE_NAME = "posthog-handbook-${buildDate}";
+const CORE_PATHS = ${JSON.stringify([...new Set(paths)], null, 2)};
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(CORE_PATHS.map((item) => new URL(item, self.registration.scope).href)))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((names) => Promise.all(names.filter((name) => name.startsWith("posthog-handbook-") && name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  if (request.method !== "GET") return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        return response;
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match(new URL("offline.html", self.registration.scope).href)))
+  );
+});
 `;
 }
 
@@ -702,17 +812,18 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
   <header class="library-header hero">
     <p class="kicker">Unofficial living edition · Generated ${escapeHtml(buildDate)}</p>
     <h1>PostHog Handbook Library</h1>
-    <p class="lede">Search and browse the generated Handbook, then download the complete mobile-friendly eBook when you are ready.</p>
+    <p class="lede">Use the installable web reader for the freshest edition, or download dated eBook snapshots for offline reading in book apps.</p>
     <p class="build-note">Built from <a href="https://posthog.com/handbook">PostHog's live handbook</a>. The live handbook remains canonical.</p>
     <div class="hero-panel">
       <div>
         <p class="eyebrow">Recommended</p>
-        <h2>Get the full Handbook eBook</h2>
-        <p>One file with all ${pages.length} discovered pages, ready for Apple Books, Kindle apps, tablets, and offline reading.</p>
+        <h2>Start with the living reader</h2>
+        <p>The web reader is the update path: it rebuilds from PostHog's public source, works offline after caching, and points to the newest generated eBooks.</p>
       </div>
       <div class="hero-actions">
-        <a class="button primary large" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
-        <a class="button large" href="#library-search">Search and browse</a>
+        <a class="button primary large" href="#library-search">Search the live reader</a>
+        <a class="button large" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
+        <a class="button large" href="#topic-ebooks">Topic eBooks</a>
         <a class="button large" href="${PROJECT_REPO_URL}">View source repo</a>
       </div>
     </div>
@@ -721,12 +832,20 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     <div class="metric"><strong>${pages.length}</strong> pages in the full eBook</div>
     <div class="metric"><strong>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()}</strong> words</div>
     <div class="metric"><strong>${sections.length}</strong> web sections for browsing</div>
-    <div class="metric"><strong>Weekly</strong> automatic rebuilds</div>
+    <div class="metric"><strong>Installable</strong> offline web reader</div>
   </section>
   <section class="about-edition">
     <h2>What This Is</h2>
     <p>This is an unofficial reader edition built for search, browsing, offline reading, and mobile/tablet eBook apps. It is generated from PostHog's public handbook source and links every page back to the canonical live handbook.</p>
-    <p>The full eBook is the simplest choice. Section eBooks and technical files are optional extras for people who want a smaller topic file or want to inspect the build.</p>
+    <p>The website is the living edition. Downloaded eBooks are dated snapshots: useful for Apple Books, Kindle apps, tablets, and flights, but they should be re-downloaded when a newer edition appears.</p>
+  </section>
+  <section class="living-note">
+    <div>
+      <p class="eyebrow">Best phone experience</p>
+      <h2>Install the Living Reader</h2>
+      <p>On mobile, add this site to your home screen. Your browser can cache the generated pages for offline reading, then refresh them when the GitHub Actions rebuild publishes a newer edition.</p>
+    </div>
+    <a class="button" href="changes.html">See latest changes</a>
   </section>
   <section class="reader-tools">
     <label for="library-search">Search the generated handbook</label>
@@ -738,13 +857,13 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     <h2>Choose Your Reading Mode</h2>
     <div class="download-grid primary-downloads">
       <a class="download-card featured-download" href="${escapeHtml(libraryEbook?.path || "#")}">
-        <span class="pill">Best for most readers</span>
+        <span class="pill">Best book-app file</span>
         <strong>Complete Handbook eBook</strong>
-        <span>All ${pages.length} pages in one mobile-friendly file${bytes(libraryEbook) ? ` · ${bytes(libraryEbook)}` : ""}</span>
+        <span>All ${pages.length} pages in one dated snapshot${bytes(libraryEbook) ? ` · ${bytes(libraryEbook)}` : ""}</span>
       </a>
-      <a class="download-card" href="company.html">
-        <strong>Browse the Web Version</strong>
-        <span>Use the generated pages when you want links, sections, and search</span>
+      <a class="download-card" href="#library-search">
+        <strong>Installable Web Reader</strong>
+        <span>Best for a living phone copy, search, and automatic refreshes</span>
       </a>
       <a class="download-card" href="${escapeHtml(companyEbook?.path || "#")}">
         <strong>Company Narrative eBook</strong>
@@ -759,7 +878,7 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
   <section id="topic-ebooks" class="topic-ebooks">
     <p class="eyebrow">Smaller downloads</p>
     <h2>Download a Topic eBook</h2>
-    <p class="section-note">Want just one part of the Handbook? These are standalone eBook files for each topic. The complete Handbook eBook above still includes everything.</p>
+    <p class="section-note">Want just one part of the Handbook? These are standalone dated eBook files for each topic. The complete Handbook eBook above still includes everything.</p>
     <div class="compact-download-grid featured-topic-grid">${sectionEbookItems}</div>
   </section>
   <section>
@@ -898,7 +1017,8 @@ function renderEpubCover(title, subtitle, pages, buildDate) {
   <h1>${escapeHtml(title)}</h1>
   <p class="subtitle">${escapeHtml(subtitle)}</p>
   <p class="build-note">Generated ${escapeHtml(buildDate)} from PostHog's public handbook source.</p>
-  <p>${pages.length} pages included. Built for offline reading, tablets, phones, and eBook apps.</p>
+  <p>${pages.length} pages included. This eBook is a dated snapshot for offline reading, tablets, phones, and book apps.</p>
+  <p><strong>Get the latest edition:</strong> <a href="${PUBLIC_READER_URL}">${PUBLIC_READER_URL}</a></p>
   <p>The live handbook at <a href="${BASE_URL}/handbook">${BASE_URL}/handbook</a> remains the source of truth.</p>
 </section>`;
   return xhtmlShell(title, body);
@@ -1166,6 +1286,10 @@ async function commandBuild(args) {
   const sections = groupSections(pages);
   await cp("styles/library.css", path.join(outDir, "assets/library.css"));
   await writeFile(path.join(outDir, "assets/search.js"), renderSearchScript());
+  await writeFile(path.join(outDir, "assets/icon.svg"), renderIconSvg());
+  await writeFile(path.join(outDir, "site.webmanifest"), renderWebManifest(buildDate));
+  await writeFile(path.join(outDir, "offline.html"), renderOfflineHtml(buildDate));
+  await writeFile(path.join(outDir, "service-worker.js"), renderServiceWorker({ pages, sections, buildDate }));
   await writeFile(path.join(outDir, ".nojekyll"), "");
 
   const artifactDrafts = [];
@@ -1306,7 +1430,7 @@ async function commandValidate(args) {
   const manifestPath = path.join(dist, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const failures = [];
-  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "assets/library.css", "assets/search.js", ".nojekyll"];
+  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "site.webmanifest", "offline.html", "service-worker.js", "assets/library.css", "assets/search.js", "assets/icon.svg", ".nojekyll"];
   for (const file of required) {
     const target = path.join(dist, file);
     if (!(await exists(target))) failures.push(`Missing ${file}`);
