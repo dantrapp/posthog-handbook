@@ -19,6 +19,7 @@ const USER_AGENT = "posthog-handbook-library/0.1";
 const GENERATOR_VERSION = "0.2.2";
 const AT_A_GLANCE_MIN_WORDS = 1200;
 const AT_A_GLANCE_MAX_ITEMS = 8;
+let assetVersion = GENERATOR_VERSION;
 const COMPANY_ORDER = [
   "contents/handbook/why-does-posthog-exist.md",
   "contents/handbook/story.md",
@@ -592,6 +593,8 @@ function renderArticleBrief(page) {
 
 function htmlShell(title, body, relativeCss = "assets/library.css") {
   const rootPrefix = relativeCss.startsWith("../") ? "../" : "";
+  const version = encodeURIComponent(assetVersion);
+  const cssHref = `${relativeCss}?v=${version}`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -599,16 +602,16 @@ function htmlShell(title, body, relativeCss = "assets/library.css") {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
   <meta name="theme-color" content="#fbfaf6">
-  <link rel="manifest" href="${rootPrefix}site.webmanifest">
-  <link rel="icon" href="${rootPrefix}assets/icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="${relativeCss}">
+  <link rel="manifest" href="${rootPrefix}site.webmanifest?v=${version}">
+  <link rel="icon" href="${rootPrefix}assets/icon.svg?v=${version}" type="image/svg+xml">
+  <link rel="stylesheet" href="${cssHref}">
 </head>
 <body>
 ${body}
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("${rootPrefix}service-worker.js").catch(() => {});
+    navigator.serviceWorker.register("${rootPrefix}service-worker.js?v=${version}").catch(() => {});
   });
 }
 </script>
@@ -670,15 +673,15 @@ function renderServiceWorker({ pages, sections, buildDate }) {
     "changes.md",
     "manifest.json",
     "search-index.json",
-    "site.webmanifest",
+    `site.webmanifest?v=${assetVersion}`,
     "offline.html",
-    "assets/library.css",
-    "assets/search.js",
-    "assets/icon.svg",
+    `assets/library.css?v=${assetVersion}`,
+    `assets/search.js?v=${assetVersion}`,
+    `assets/icon.svg?v=${assetVersion}`,
     ...sections.map((section) => `sections/${section.id}.html`),
     ...pages.map((page) => pageHref(page)),
   ];
-  return `const CACHE_NAME = "posthog-handbook-${buildDate}";
+  return `const CACHE_NAME = "posthog-handbook-${buildDate}-${assetVersion}";
 const CORE_PATHS = ${JSON.stringify([...new Set(paths)], null, 2)};
 
 self.addEventListener("install", (event) => {
@@ -882,7 +885,7 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     </details>
   </section>
 </main>`;
-  return htmlShell("PostHog Handbook Library", body.replace("</main>", `<script src="assets/search.js"></script>\n</main>`));
+  return htmlShell("PostHog Handbook Library", body.replace("</main>", `<script src="assets/search.js?v=${encodeURIComponent(assetVersion)}"></script>\n</main>`));
 }
 
 function renderSection(section) {
@@ -1260,6 +1263,8 @@ async function commandBuild(args) {
     }
   }
   const sections = groupSections(pages);
+  const cssSource = await readFile("styles/library.css", "utf8");
+  assetVersion = hash(`${GENERATOR_VERSION}:${cssSource}`).slice(0, 12);
   await cp("styles/library.css", path.join(outDir, "assets/library.css"));
   await writeFile(path.join(outDir, "assets/search.js"), renderSearchScript());
   await writeFile(path.join(outDir, "assets/icon.svg"), renderIconSvg());
