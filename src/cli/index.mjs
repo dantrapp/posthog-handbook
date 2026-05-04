@@ -479,6 +479,7 @@ async function enrichPage(entry, index) {
     wordCount: text ? text.split(/\s+/).length : 0,
     readingTimeMinutes: Math.max(1, Math.ceil((text ? text.split(/\s+/).length : 0) / 225)),
     headings: [...normalizeMarkdown(markdown).matchAll(/^#{1,6}\s+(.+)$/gm)].map((m) => m[1].trim()),
+    searchText: text,
     markdown,
     html: markdownToHtml(markdown),
     warnings: markdown.includes("<") && /<\/?[A-Z]/.test(markdown)
@@ -526,25 +527,117 @@ ${body}
 `;
 }
 
+function renderSearchScript() {
+  return `const input = document.querySelector("[data-search-input]");
+const results = document.querySelector("[data-search-results]");
+const status = document.querySelector("[data-search-status]");
+
+function escapeHTML(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+async function loadSearch() {
+  const response = await fetch("search-index.json");
+  return response.json();
+}
+
+function scoreDocument(document, query) {
+  const terms = query.toLowerCase().split(/\\s+/).filter(Boolean);
+  const title = document.title.toLowerCase();
+  const section = String(document.section || "").toLowerCase();
+  const sourcePath = document.sourcePath.toLowerCase();
+  const text = document.text.toLowerCase();
+  let score = 0;
+  for (const term of terms) {
+    if (title.includes(term)) score += 8;
+    if (section.includes(term)) score += 4;
+    if (sourcePath.includes(term)) score += 3;
+    if (text.includes(term)) score += 1;
+  }
+  return score;
+}
+
+function renderResults(documents, query) {
+  if (!query.trim()) {
+    results.innerHTML = "";
+    status.textContent = "Type to search titles, sections, paths, and page text.";
+    return;
+  }
+  const matches = documents
+    .map((document) => ({ document, score: scoreDocument(document, query) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+  status.textContent = matches.length ? \`\${matches.length} best matches\` : "No matches found.";
+  results.innerHTML = matches.map(({ document }) => \`<li>
+    <a href="\${escapeHTML(document.url)}">\${escapeHTML(document.title)}</a>
+    <span>\${escapeHTML(document.sectionLabel)} · \${escapeHTML(document.sourcePath)}</span>
+    <p>\${escapeHTML(document.excerpt)}</p>
+  </li>\`).join("");
+}
+
+if (input && results && status) {
+  loadSearch().then((documents) => {
+    input.disabled = false;
+    input.placeholder = "Search product, hiring, pricing, incidents...";
+    status.textContent = "Type to search titles, sections, paths, and page text.";
+    input.addEventListener("input", () => renderResults(documents, input.value));
+  }).catch(() => {
+    status.textContent = "Search index could not be loaded.";
+  });
+}
+`;
+}
+
 function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] }) {
   const sectionItems = sections.map((section) => {
     return `<li><a href="sections/${section.id}.html">${escapeHtml(section.title)}</a> <span>${section.pages.length} pages</span></li>`;
   }).join("\n");
-  const artifactItems = artifacts
-    .filter((artifact) => artifact.public)
-    .map((artifact) => `<li><a href="${escapeHtml(artifact.path)}">${escapeHtml(artifact.label)}</a> <span>${escapeHtml(artifact.type)}</span></li>`)
-    .join("\n");
+  const publicArtifacts = artifacts.filter((artifact) => artifact.public);
+  const artifactItems = publicArtifacts.map((artifact) => `<li>
+    <a href="${escapeHtml(artifact.path)}">${escapeHtml(artifact.label)}</a>
+    <span>${escapeHtml(artifact.type)}${artifact.bytes ? ` · ${Math.ceil(artifact.bytes / 1024).toLocaleString()} KB` : ""}</span>
+  </li>`).join("\n");
+  const featured = [
+    artifacts.find((artifact) => artifact.type === "html-archive"),
+    artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "library"),
+    artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "company"),
+    artifacts.find((artifact) => artifact.type === "print-html"),
+  ].filter(Boolean);
+  const featuredItems = featured.map((artifact) => `<a class="download-card" href="${escapeHtml(artifact.path)}">
+    <strong>${escapeHtml(artifact.label)}</strong>
+    <span>${escapeHtml(artifact.type)}${artifact.bytes ? ` · ${Math.ceil(artifact.bytes / 1024).toLocaleString()} KB` : ""}</span>
+  </a>`).join("\n");
   const body = `<main class="site-shell">
   <header class="library-header">
-    <p class="kicker">Unofficial generated edition</p>
+    <p class="kicker">Unofficial living edition · Generated ${escapeHtml(buildDate)}</p>
     <h1>PostHog Handbook Library</h1>
     <p class="build-note">Generated ${escapeHtml(buildDate)} from <a href="https://github.com/PostHog/posthog.com/tree/master/contents/handbook">PostHog/posthog.com contents/handbook</a>. The live handbook remains canonical.</p>
+    <div class="actions">
+      <a class="button primary" href="company.html">Read the company edition</a>
+      <a class="button" href="downloads/posthog-handbook-library-${escapeHtml(buildDate)}.epub">Download complete EPUB</a>
+      <a class="button" href="changes.md">See what changed</a>
+    </div>
   </header>
   <section class="summary-grid" aria-label="Build summary">
     <div class="metric"><strong>${pages.length}</strong> pages discovered</div>
     <div class="metric"><strong>${sections.length}</strong> sections</div>
     <div class="metric"><strong>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()}</strong> words</div>
     <div class="metric"><strong>${pages.filter((page) => page.warnings.length).length}</strong> pages with warnings</div>
+  </section>
+  <section class="reader-tools">
+    <label for="library-search">Search the generated handbook</label>
+    <input id="library-search" type="search" data-search-input disabled placeholder="Loading search index..." autocomplete="off">
+    <p class="search-status" data-search-status>Loading search index...</p>
+    <ol class="search-results" data-search-results></ol>
+  </section>
+  <section>
+    <h2>Best Starting Points</h2>
+    <div class="download-grid">${featuredItems}</div>
   </section>
   <section>
     <h2>Sections</h2>
@@ -561,7 +654,7 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     </ul>
   </section>
 </main>`;
-  return htmlShell("PostHog Handbook Library", body);
+  return htmlShell("PostHog Handbook Library", body.replace("</main>", `<script src="assets/search.js"></script>\n</main>`));
 }
 
 function renderSection(section) {
@@ -935,6 +1028,8 @@ async function commandBuild(args) {
   }
   const sections = groupSections(pages);
   await cp("styles/library.css", path.join(outDir, "assets/library.css"));
+  await writeFile(path.join(outDir, "assets/search.js"), renderSearchScript());
+  await writeFile(path.join(outDir, ".nojekyll"), "");
 
   const artifactDrafts = [];
   if (edition === "all" || edition === "library") {
@@ -948,10 +1043,13 @@ async function commandBuild(args) {
       id: page.id,
       title: page.title,
       section: page.section,
+      sectionLabel: page.section ? titleCaseSegment(page.section) : "Handbook Front Door",
       url: pageHref(page),
       canonicalUrl: page.canonicalUrl,
       sourcePath: page.sourcePath,
       headings: page.headings,
+      excerpt: page.searchText.slice(0, 220),
+      text: page.searchText,
     })), null, 2)}\n`);
     await writeFile(path.join(outDir, "print.html"), renderPrintHtml(pages, sections, buildDate));
     artifactDrafts.push({ type: "html-library", label: "Full HTML library", path: "index.html", public: false });
@@ -1071,7 +1169,7 @@ async function commandValidate(args) {
   const manifestPath = path.join(dist, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const failures = [];
-  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "assets/library.css"];
+  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "assets/library.css", "assets/search.js", ".nojekyll"];
   for (const file of required) {
     const target = path.join(dist, file);
     if (!(await exists(target))) failures.push(`Missing ${file}`);

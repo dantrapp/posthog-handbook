@@ -1,33 +1,50 @@
 # PostHog Handbook Library
 
-An unofficial, rebuildable publishing layer for PostHog's public handbook.
+An unofficial, living reader edition of PostHog's public handbook.
 
-This project started from a community-shaped product problem: an ebook version of the handbook would be useful, but PostHog's handbook changes constantly, so a static book would go stale.
+PostHog's handbook changes constantly, so a normal ebook would go stale. This project rebuilds the handbook from the public source, publishes fresh reader editions, and explains what changed between editions.
 
-This repo treats that objection as the core feature. It builds dated reader editions, manifests, source provenance, and change digests directly from PostHog's public handbook source. The live PostHog handbook remains the source of truth.
+The live PostHog handbook remains the source of truth.
 
-## Current Iteration
+## Use It
 
-This first public iteration ships a dependency-free Node.js CLI that can:
+No terminal required.
 
-- discover every Markdown/MDX file under `contents/handbook/**` from `PostHog/posthog.com`
-- fetch raw source content from GitHub
-- generate a full static HTML handbook library
-- generate a company narrative HTML edition
-- generate a complete-library EPUB
-- generate a company narrative EPUB
-- generate section-level EPUB volumes
-- generate a print-ready HTML edition
-- package the HTML library as a downloadable ZIP
-- generate per-page source metadata and content hashes
-- generate a machine-readable manifest
-- generate a baseline or comparative change digest from a previous manifest
-- validate generated HTML, manifests, EPUBs, downloads, and artifact hashes
-- rebuild on a weekly GitHub Actions schedule and publish dated GitHub Releases
+- Read online: https://dantrapp.github.io/posthog-handbook/
+- Download the latest EPUBs and ZIP: https://github.com/dantrapp/posthog-handbook/releases/latest
+- Start with the company narrative edition if you want the readable front-door version.
+- Use the section EPUBs if you only care about Engineering, People, Growth, Product, and so on.
 
-Richer MDX component adapters and deeper fixture coverage are planned next. An earlier EPUB proof of concept is kept locally in ignored `v1/` and is not part of the public repo history.
+## What It Builds
 
-## Usage
+Every generated edition includes source links and a generated date.
+
+- Complete HTML handbook library
+- Searchable hosted reader site
+- Company narrative HTML edition
+- Complete-library EPUB
+- Company narrative EPUB
+- Section-level EPUB volumes
+- Print/PDF-ready HTML
+- Downloadable HTML library ZIP
+- Full source and artifact manifest
+- Human-readable and JSON change digests
+
+## Living Rebuilds
+
+GitHub Actions does the living-book work:
+
+1. Runs on pushes, manual dispatch, and a weekly schedule.
+2. Downloads the latest released manifest when one exists.
+3. Rebuilds the live PostHog handbook from `PostHog/posthog.com`.
+4. Compares the new manifest against the previous released manifest.
+5. Generates Markdown and JSON change digests.
+6. Publishes the reader site to GitHub Pages.
+7. Publishes a dated GitHub Release with EPUBs, the HTML archive, manifest, and changes.
+
+That is the product idea: do not pretend the handbook is stable. Rebuild it, timestamp it, attribute it, and show the diff.
+
+## For Developers
 
 Requires Node.js 22+.
 
@@ -35,6 +52,7 @@ Requires Node.js 22+.
 npm run discover
 npm run build
 npm run validate
+npm test
 ```
 
 For a faster live smoke build:
@@ -44,31 +62,6 @@ npm run build:smoke
 ```
 
 Build outputs are written to `dist/`. The latest complete library is also copied to `dist/latest/`.
-
-Generated outputs include:
-
-- `index.html` complete library homepage
-- `company.html` company narrative reader edition
-- `print.html` print/PDF-ready edition
-- `manifest.json` full source and artifact manifest
-- `changes.md`, `changes.html`, and `changes.json`
-- `downloads/posthog-handbook-library-YYYY-MM-DD.epub`
-- `downloads/posthog-company-handbook-YYYY-MM-DD.epub`
-- `downloads/posthog-handbook-<section>-YYYY-MM-DD.epub`
-- `downloads/posthog-handbook-library-YYYY-MM-DD.html.zip`
-
-## Living Rebuilds
-
-The GitHub Actions workflow does the living-book work:
-
-1. Runs on pull requests, pushes to `main`, a weekly schedule, and manual dispatch.
-2. Downloads the latest released manifest when one exists.
-3. Rebuilds the live PostHog handbook from source.
-4. Compares the new manifest against the previous released manifest.
-5. Generates a human and machine-readable change digest.
-6. Publishes a dated GitHub Release with EPUBs, the HTML library archive, manifest, and changes.
-
-That release loop is the important product move: the project does not pretend the handbook is stable. It rebuilds, timestamps, attributes, and explains what changed.
 
 ## CLI
 
@@ -91,4 +84,3 @@ There is no manually maintained book here. There is only:
 - clear source attribution
 - manifest-based change intelligence
 
-That is the answer to the stale-book problem: do not pretend the handbook is stable; make freshness and provenance visible.
