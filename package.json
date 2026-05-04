@@ -1,6 +1,6 @@
 {
   "name": "posthog-handbook-library",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "An unofficial rebuildable publishing layer for PostHog's public handbook.",
@@ -12,7 +12,8 @@
     "discover": "node src/cli/index.mjs discover",
     "build": "node src/cli/index.mjs build --edition all",
     "build:smoke": "node src/cli/index.mjs build --edition all --limit 5",
-    "validate": "node src/cli/index.mjs validate --dist dist/latest"
+    "validate": "node src/cli/index.mjs validate --dist dist/latest",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=22"
@@ -26,4 +27,3 @@
   ],
   "license": "MIT"
 }
-

@@ -2,9 +2,10 @@
 
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
-import { readFile, writeFile, mkdir, cp, access } from "node:fs/promises";
+import { readFile, writeFile, mkdir, cp, access, readdir, stat, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const BASE_URL = "https://posthog.com";
 const SOURCE_REPO = "PostHog/posthog.com";
@@ -13,6 +14,7 @@ const TREE_API = `https://api.github.com/repos/${SOURCE_REPO}/git/trees/${SOURCE
 const RAW_BASE = `https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REF}/`;
 const GITHUB_BASE = `https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}/`;
 const USER_AGENT = "posthog-handbook-library/0.1";
+const GENERATOR_VERSION = "0.2.0";
 const COMPANY_ORDER = [
   "contents/handbook/why-does-posthog-exist.md",
   "contents/handbook/story.md",
@@ -93,6 +95,120 @@ async function exists(filePath) {
   } catch {
     return false;
   }
+}
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const time =
+    (date.getHours() << 11) |
+    (date.getMinutes() << 5) |
+    Math.floor(date.getSeconds() / 2);
+  const dosDate =
+    ((date.getFullYear() - 1980) << 9) |
+    ((date.getMonth() + 1) << 5) |
+    date.getDate();
+  return { time, date: dosDate };
+}
+
+function zipEntry(name, data) {
+  return {
+    name: name.replace(/^\/+/, ""),
+    data: Buffer.isBuffer(data) ? data : Buffer.from(String(data)),
+  };
+}
+
+function buildZip(entries) {
+  const localParts = [];
+  const centralParts = [];
+  const { time, date } = dosDateTime();
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const data = entry.data;
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(date, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    localParts.push(local, name, data);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(time, 12);
+    central.writeUInt16LE(date, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centralParts.push(central, name);
+    offset += local.length + name.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+  return Buffer.concat([...localParts, ...centralParts, end]);
+}
+
+async function writeZip(outputPath, entries) {
+  await ensureDir(path.dirname(outputPath));
+  await writeFile(outputPath, buildZip(entries));
+}
+
+async function collectFiles(root, base = root) {
+  const items = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      items.push(...await collectFiles(fullPath, base));
+    } else if (entry.isFile()) {
+      items.push({
+        absolutePath: fullPath,
+        relativePath: path.relative(base, fullPath).split(path.sep).join("/"),
+      });
+    }
+  }
+  return items;
+}
+
+async function fileHash(filePath) {
+  return hash(await readFile(filePath));
 }
 
 async function fetchText(url) {
@@ -410,10 +526,14 @@ ${body}
 `;
 }
 
-function renderIndex({ pages, sections, buildDate, manifestPath }) {
+function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] }) {
   const sectionItems = sections.map((section) => {
     return `<li><a href="sections/${section.id}.html">${escapeHtml(section.title)}</a> <span>${section.pages.length} pages</span></li>`;
   }).join("\n");
+  const artifactItems = artifacts
+    .filter((artifact) => artifact.public)
+    .map((artifact) => `<li><a href="${escapeHtml(artifact.path)}">${escapeHtml(artifact.label)}</a> <span>${escapeHtml(artifact.type)}</span></li>`)
+    .join("\n");
   const body = `<main class="site-shell">
   <header class="library-header">
     <p class="kicker">Unofficial generated edition</p>
@@ -432,11 +552,12 @@ function renderIndex({ pages, sections, buildDate, manifestPath }) {
   </section>
   <section>
     <h2>Downloads and Data</h2>
-    <ul>
+    <ul class="toc">
       <li><a href="${escapeHtml(manifestPath)}">Manifest JSON</a></li>
       <li><a href="search-index.json">Search index JSON</a></li>
       <li><a href="changes.md">Change digest</a></li>
       <li><a href="company.html">Company narrative edition</a></li>
+      ${artifactItems}
     </ul>
   </section>
 </main>`;
@@ -502,11 +623,155 @@ function renderCompany(pages, buildDate) {
   return htmlShell("PostHog Company Handbook", body);
 }
 
+function renderPrintHtml(pages, sections, buildDate) {
+  const sectionToc = sections.map((section) => {
+    const items = section.pages.map((page) => `<li><a href="#${page.id}">${escapeHtml(page.title)}</a></li>`).join("\n");
+    return `<li>${escapeHtml(section.title)}<ol>${items}</ol></li>`;
+  }).join("\n");
+  const articles = sections.flatMap((section) => section.pages.map((page) => `<article id="${page.id}">
+    <h1>${escapeHtml(page.title)}</h1>
+    <p class="build-note">${escapeHtml(section.title)} | Source: <a href="${escapeHtml(page.canonicalUrl)}">${escapeHtml(page.canonicalUrl)}</a></p>
+    ${page.html}
+  </article>`)).join("\n");
+  const body = `<main class="site-shell reader">
+  <header class="library-header">
+    <p class="kicker">Print-ready generated edition</p>
+    <h1>PostHog Handbook Library</h1>
+    <p class="build-note">Generated ${escapeHtml(buildDate)} from PostHog's public handbook source. The live handbook remains canonical.</p>
+  </header>
+  <nav aria-label="Contents">
+    <h2>Contents</h2>
+    <ol class="toc">${sectionToc}</ol>
+  </nav>
+  ${articles}
+</main>`;
+  return htmlShell("PostHog Handbook Library Print Edition", body);
+}
+
+function xhtmlShell(title, body, extra = "") {
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <link rel="stylesheet" type="text/css" href="styles.css" />
+</head>
+<body>
+${body}
+${extra}
+</body>
+</html>
+`;
+}
+
+function renderEpubCover(title, subtitle, pages, buildDate) {
+  const body = `<section class="cover">
+  <h1>${escapeHtml(title)}</h1>
+  <p class="build-note">${escapeHtml(subtitle)}</p>
+  <p>Generated ${escapeHtml(buildDate)} from PostHog's public handbook source.</p>
+  <p>The live handbook at <a href="${BASE_URL}/handbook">${BASE_URL}/handbook</a> remains canonical.</p>
+  <p>${pages.length} pages included.</p>
+</section>`;
+  return xhtmlShell(title, body);
+}
+
+function renderEpubNav(title, pages) {
+  const items = pages.map((page, index) => `<li><a href="pages/${escapeHtml(page.id)}.xhtml">${index + 1}. ${escapeHtml(page.title)}</a></li>`).join("\n");
+  const body = `<nav epub:type="toc" id="toc">
+  <h1>${escapeHtml(title)}</h1>
+  <ol>
+    <li><a href="cover.xhtml">Cover</a></li>
+    ${items}
+  </ol>
+</nav>`;
+  return xhtmlShell(`${title} Contents`, body);
+}
+
+function renderEpubPage(page, index) {
+  const body = `<article>
+  <h1>${index + 1}. ${escapeHtml(page.title)}</h1>
+  <p class="build-note">Source: <a href="${escapeHtml(page.canonicalUrl)}">${escapeHtml(page.canonicalUrl)}</a></p>
+  ${page.html}
+</article>`;
+  return xhtmlShell(page.title, body);
+}
+
+function renderContentOpf({ title, identifier, pages, buildDate }) {
+  const pageItems = pages.map((page) => `<item id="${escapeHtml(page.id)}" href="pages/${escapeHtml(page.id)}.xhtml" media-type="application/xhtml+xml"/>`).join("\n    ");
+  const spineItems = pages.map((page) => `<itemref idref="${escapeHtml(page.id)}"/>`).join("\n    ");
+  return `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="bookid" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">urn:uuid:${escapeHtml(identifier)}</dc:identifier>
+    <dc:title>${escapeHtml(title)}</dc:title>
+    <dc:creator>PostHog</dc:creator>
+    <dc:language>en</dc:language>
+    <dc:publisher>Unofficial PostHog Handbook Library generator</dc:publisher>
+    <dc:date>${escapeHtml(buildDate)}</dc:date>
+    <meta property="dcterms:modified">${escapeHtml(buildDate)}T00:00:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
+    <item id="styles" href="styles.css" media-type="text/css"/>
+    ${pageItems}
+  </manifest>
+  <spine>
+    <itemref idref="cover"/>
+    ${spineItems}
+  </spine>
+</package>
+`;
+}
+
+async function writeEpub({ pages, outputPath, title, subtitle, buildDate }) {
+  const container = `<?xml version="1.0" encoding="utf-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+`;
+  const css = await readFile("styles/library.css", "utf8");
+  const identifier = hash(`${title}:${buildDate}:${pages.map((page) => page.contentHash).join(":")}`).slice(0, 32);
+  const entries = [
+    zipEntry("mimetype", "application/epub+zip"),
+    zipEntry("META-INF/container.xml", container),
+    zipEntry("OEBPS/styles.css", css),
+    zipEntry("OEBPS/cover.xhtml", renderEpubCover(title, subtitle, pages, buildDate)),
+    zipEntry("OEBPS/nav.xhtml", renderEpubNav(title, pages)),
+    zipEntry("OEBPS/content.opf", renderContentOpf({ title, identifier, pages, buildDate })),
+    ...pages.map((page, index) => zipEntry(`OEBPS/pages/${page.id}.xhtml`, renderEpubPage(page, index))),
+  ];
+  await writeZip(outputPath, entries);
+}
+
+async function writeDirectoryArchive({ sourceDir, outputPath, prefix }) {
+  const files = await collectFiles(sourceDir);
+  const entries = [];
+  for (const file of files) {
+    if (path.resolve(file.absolutePath) === path.resolve(outputPath)) continue;
+    entries.push(zipEntry(`${prefix}/${file.relativePath}`, await readFile(file.absolutePath)));
+  }
+  await writeZip(outputPath, entries);
+}
+
+async function artifactMetadata(outDir, artifact) {
+  const target = path.join(outDir, artifact.path);
+  const info = await stat(target);
+  return {
+    ...artifact,
+    bytes: info.size,
+    contentHash: await fileHash(target),
+  };
+}
+
 function manifestFor({ pages, sections, buildDate, artifacts }) {
   return {
     schemaVersion: "0.1",
     generatedAt: buildDate,
-    generatorVersion: "0.1.0",
+    generatorVersion: GENERATOR_VERSION,
     sourceRepo: SOURCE_REPO,
     sourceRef: SOURCE_REF,
     pageCount: pages.length,
@@ -540,14 +805,17 @@ function manifestFor({ pages, sections, buildDate, artifacts }) {
 function compareManifests(previous, current) {
   const previousByPath = new Map(previous.pages.map((page) => [page.sourcePath, page]));
   const currentByPath = new Map(current.pages.map((page) => [page.sourcePath, page]));
+  const removedCandidates = [];
+  const addedCandidates = [];
   const added = [];
   const removed = [];
+  const moved = [];
   const changed = [];
   const metadataOnly = [];
   for (const page of current.pages) {
     const old = previousByPath.get(page.sourcePath);
     if (!old) {
-      added.push(page);
+      addedCandidates.push(page);
     } else if (old.contentHash !== page.contentHash) {
       changed.push({ before: old, after: page });
     } else if (old.title !== page.title || old.canonicalUrl !== page.canonicalUrl) {
@@ -556,10 +824,20 @@ function compareManifests(previous, current) {
   }
   for (const page of previous.pages) {
     if (!currentByPath.has(page.sourcePath)) {
-      removed.push(page);
+      removedCandidates.push(page);
     }
   }
-  return { added, removed, changed, metadataOnly };
+  for (const page of addedCandidates) {
+    const movedFrom = removedCandidates.find((candidate) => candidate.contentHash === page.contentHash);
+    if (movedFrom) {
+      moved.push({ before: movedFrom, after: page });
+      removedCandidates.splice(removedCandidates.indexOf(movedFrom), 1);
+    } else {
+      added.push(page);
+    }
+  }
+  removed.push(...removedCandidates);
+  return { added, removed, moved, changed, metadataOnly };
 }
 
 function renderChangeMarkdown(diff, current, previous = null) {
@@ -576,6 +854,7 @@ function renderChangeMarkdown(diff, current, previous = null) {
   const groups = [
     ["Added Pages", diff.added.map((page) => page.sourcePath)],
     ["Removed Pages", diff.removed.map((page) => page.sourcePath)],
+    ["Moved Pages", (diff.moved || []).map(({ before, after }) => `${before.sourcePath} -> ${after.sourcePath}`)],
     ["Changed Pages", diff.changed.map(({ after }) => after.sourcePath)],
     ["Metadata-Only Changes", diff.metadataOnly.map(({ after }) => after.sourcePath)],
   ];
@@ -591,6 +870,22 @@ function renderChangeMarkdown(diff, current, previous = null) {
     lines.push("");
   }
   return `${lines.join("\n").trim()}\n`;
+}
+
+function serializeDiff(diff) {
+  const pageRef = (page) => ({
+    title: page.title,
+    sourcePath: page.sourcePath,
+    canonicalUrl: page.canonicalUrl,
+    contentHash: page.contentHash,
+  });
+  return {
+    added: diff.added.map(pageRef),
+    removed: diff.removed.map(pageRef),
+    moved: (diff.moved || []).map(({ before, after }) => ({ before: pageRef(before), after: pageRef(after) })),
+    changed: diff.changed.map(({ before, after }) => ({ before: pageRef(before), after: pageRef(after) })),
+    metadataOnly: diff.metadataOnly.map(({ before, after }) => ({ before: pageRef(before), after: pageRef(after) })),
+  };
 }
 
 async function commandDiscover(args) {
@@ -622,10 +917,12 @@ async function commandBuild(args) {
   const limit = args.limit ? Number(args.limit) : Number.POSITIVE_INFINITY;
   const outRoot = args["out-dir"] || "dist";
   const outDir = path.join(outRoot, `posthog-handbook-library-${buildDate}`);
+  await rm(outDir, { recursive: true, force: true });
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "assets"));
   await ensureDir(path.join(outDir, "pages"));
   await ensureDir(path.join(outDir, "sections"));
+  await ensureDir(path.join(outDir, "downloads"));
 
   const entries = await discoverSourcePages(limit);
   const pages = [];
@@ -639,7 +936,7 @@ async function commandBuild(args) {
   const sections = groupSections(pages);
   await cp("styles/library.css", path.join(outDir, "assets/library.css"));
 
-  const artifacts = [];
+  const artifactDrafts = [];
   if (edition === "all" || edition === "library") {
     for (const page of pages) {
       await writeFile(path.join(outDir, pageHref(page)), renderPage(page));
@@ -656,26 +953,101 @@ async function commandBuild(args) {
       sourcePath: page.sourcePath,
       headings: page.headings,
     })), null, 2)}\n`);
-    artifacts.push({ type: "html-library", path: "index.html" });
-    artifacts.push({ type: "search-index", path: "search-index.json" });
+    await writeFile(path.join(outDir, "print.html"), renderPrintHtml(pages, sections, buildDate));
+    artifactDrafts.push({ type: "html-library", label: "Full HTML library", path: "index.html", public: false });
+    artifactDrafts.push({ type: "print-html", label: "Print-ready HTML", path: "print.html", public: true });
+    artifactDrafts.push({ type: "search-index", label: "Search index JSON", path: "search-index.json", public: false });
   }
   if (edition === "all" || edition === "company") {
     await writeFile(path.join(outDir, "company.html"), renderCompany(pages, buildDate));
-    artifacts.push({ type: "html", edition: "company", path: "company.html" });
+    artifactDrafts.push({ type: "html", edition: "company", label: "Company narrative HTML", path: "company.html", public: true });
   }
 
-  const manifest = manifestFor({ pages, sections, buildDate, artifacts });
-  await writeFile(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-  const digest = renderChangeMarkdown({ added: pages, removed: [], changed: [], metadataOnly: [] }, manifest, null);
+  const companyPages = COMPANY_ORDER
+    .map((sourcePath) => pages.find((page) => page.sourcePath === sourcePath))
+    .filter(Boolean);
+  const sectionVolumes = sections.filter((section) => section.pages.length > 0);
+  const companyEpub = `downloads/posthog-company-handbook-${buildDate}.epub`;
+  const libraryEpub = `downloads/posthog-handbook-library-${buildDate}.epub`;
+  await writeEpub({
+    pages: companyPages,
+    outputPath: path.join(outDir, companyEpub),
+    title: "PostHog Company Handbook",
+    subtitle: "Company narrative edition",
+    buildDate,
+  });
+  await writeEpub({
+    pages,
+    outputPath: path.join(outDir, libraryEpub),
+    title: "PostHog Handbook Library",
+    subtitle: "Complete generated edition",
+    buildDate,
+  });
+  artifactDrafts.push({ type: "epub", edition: "company", label: "Company narrative EPUB", path: companyEpub, public: true });
+  artifactDrafts.push({ type: "epub", edition: "library", label: "Complete library EPUB", path: libraryEpub, public: true });
+
+  for (const section of sectionVolumes) {
+    const sectionPath = `downloads/posthog-handbook-${section.id}-${buildDate}.epub`;
+    await writeEpub({
+      pages: section.pages,
+      outputPath: path.join(outDir, sectionPath),
+      title: `PostHog Handbook: ${section.title}`,
+      subtitle: `${section.title} section volume`,
+      buildDate,
+    });
+    artifactDrafts.push({ type: "epub", edition: "section", section: section.id, label: `${section.title} EPUB`, path: sectionPath, public: true });
+  }
+
+  const artifactsBeforeDigest = [];
+  for (const artifact of artifactDrafts) {
+    if (await exists(path.join(outDir, artifact.path))) {
+      artifactsBeforeDigest.push(await artifactMetadata(outDir, artifact));
+    }
+  }
+  let manifest = manifestFor({ pages, sections, buildDate, artifacts: artifactsBeforeDigest });
+  const previous = args["previous-manifest"]
+    ? JSON.parse(await readFile(args["previous-manifest"], "utf8"))
+    : null;
+  const diff = previous
+    ? compareManifests(previous, manifest)
+    : { added: pages, removed: [], moved: [], changed: [], metadataOnly: [] };
+  const digest = renderChangeMarkdown(diff, manifest, previous);
   await writeFile(path.join(outDir, "changes.md"), digest);
   await writeFile(path.join(outDir, "changes.html"), htmlShell("PostHog Handbook Changes", `<main class="site-shell reader">${markdownToHtml(digest)}</main>`));
-  await writeFile(path.join(outDir, "index.html"), renderIndex({ pages, sections, buildDate, manifestPath: "manifest.json" }));
+  await writeFile(path.join(outDir, "changes.json"), `${JSON.stringify(serializeDiff(diff), null, 2)}\n`);
+  artifactDrafts.push({ type: "changes", label: "Change digest Markdown", path: "changes.md", public: true });
+  artifactDrafts.push({ type: "changes-json", label: "Change digest JSON", path: "changes.json", public: false });
+
+  const htmlArchive = `downloads/posthog-handbook-library-${buildDate}.html.zip`;
+  artifactDrafts.push({ type: "html-archive", label: "Complete HTML library ZIP", path: htmlArchive, public: true });
+  await writeFile(path.join(outDir, "index.html"), renderIndex({
+    pages,
+    sections,
+    buildDate,
+    manifestPath: "manifest.json",
+    artifacts: artifactDrafts,
+  }));
+  await writeFile(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeDirectoryArchive({
+    sourceDir: outDir,
+    outputPath: path.join(outDir, htmlArchive),
+    prefix: `posthog-handbook-library-${buildDate}`,
+  });
+
+  const artifacts = [];
+  for (const artifact of artifactDrafts) {
+    artifacts.push(await artifactMetadata(outDir, artifact));
+  }
+  manifest = manifestFor({ pages, sections, buildDate, artifacts });
+  await writeFile(path.join(outDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
   const latestDir = path.join(outRoot, "latest");
+  await rm(latestDir, { recursive: true, force: true });
   await cp(outDir, latestDir, { recursive: true, force: true });
   console.log(`Built ${outDir}`);
   console.log(`Built ${latestDir}`);
   console.log(`Pages: ${pages.length}`);
+  console.log(`Artifacts: ${artifacts.length}`);
 }
 
 async function commandDiff(args) {
@@ -699,7 +1071,7 @@ async function commandValidate(args) {
   const manifestPath = path.join(dist, "manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const failures = [];
-  const required = ["index.html", "company.html", "manifest.json", "changes.md", "search-index.json", "assets/library.css"];
+  const required = ["index.html", "company.html", "print.html", "manifest.json", "changes.md", "changes.json", "search-index.json", "assets/library.css"];
   for (const file of required) {
     const target = path.join(dist, file);
     if (!(await exists(target))) failures.push(`Missing ${file}`);
@@ -709,8 +1081,33 @@ async function commandValidate(args) {
       failures.push(`Missing page HTML for ${page.sourcePath}`);
     }
   }
+  const pageFiles = await collectFiles(path.join(dist, "pages"));
+  if (pageFiles.length !== manifest.pages.length) {
+    failures.push(`Generated page file count ${pageFiles.length} does not match manifest pages length ${manifest.pages.length}`);
+  }
   if (manifest.pageCount !== manifest.pages.length) {
     failures.push(`Manifest pageCount ${manifest.pageCount} does not match pages length ${manifest.pages.length}`);
+  }
+  for (const artifact of manifest.artifacts || []) {
+    const target = path.join(dist, artifact.path);
+    if (!(await exists(target))) {
+      failures.push(`Missing artifact ${artifact.path}`);
+      continue;
+    }
+    if (artifact.contentHash && artifact.contentHash !== await fileHash(target)) {
+      failures.push(`Artifact hash mismatch for ${artifact.path}`);
+    }
+    if (artifact.path.endsWith(".epub")) {
+      const data = await readFile(target);
+      if (data.slice(0, 4).toString("binary") !== "PK\u0003\u0004") {
+        failures.push(`EPUB does not start with a ZIP local header: ${artifact.path}`);
+      }
+      const mimetype = data.slice(30, 30 + "mimetype".length).toString("utf8");
+      const value = data.slice(30 + "mimetype".length, 30 + "mimetype".length + "application/epub+zip".length).toString("utf8");
+      if (mimetype !== "mimetype" || value !== "application/epub+zip") {
+        failures.push(`EPUB mimetype is not first and uncompressed: ${artifact.path}`);
+      }
+    }
   }
   if (failures.length) {
     console.error(failures.join("\n"));
@@ -772,8 +1169,18 @@ async function main() {
   throw new Error(`Unknown command: ${command}`);
 }
 
-main().catch((error) => {
-  console.error(error.stack || error.message);
-  process.exitCode = 1;
-});
+export {
+  buildZip,
+  canonicalPath,
+  compareManifests,
+  markdownToHtml,
+  sectionFor,
+  serializeDiff,
+};
 
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main().catch((error) => {
+    console.error(error.stack || error.message);
+    process.exitCode = 1;
+  });
+}

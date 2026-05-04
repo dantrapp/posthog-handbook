@@ -1,4 +1,4 @@
-name: Build
+name: Build and publish handbook
 
 on:
   pull_request:
@@ -11,11 +11,60 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm run build:smoke
+      - name: Download latest released manifest
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .cache/previous
+          gh release download --repo "${GITHUB_REPOSITORY}" --pattern "*.manifest.json" --dir .cache/previous || true
+      - name: Build from live PostHog handbook
+        if: github.event_name != 'pull_request'
+        run: |
+          previous="$(find .cache/previous -name '*.manifest.json' -print | sort | tail -n 1)"
+          if [ -n "$previous" ]; then
+            npm run cli -- build --edition all --previous-manifest "$previous"
+          else
+            npm run build
+          fi
+      - name: Smoke build for pull requests
+        if: github.event_name == 'pull_request'
+        run: npm run build:smoke
       - run: npm run validate
-
+      - name: Prepare release files
+        if: github.event_name != 'pull_request'
+        run: |
+          date="$(node -e "console.log(require('./dist/latest/manifest.json').generatedAt)")"
+          mkdir -p release
+          cp dist/latest/manifest.json "release/posthog-handbook-library-${date}.manifest.json"
+          cp dist/latest/changes.md "release/posthog-handbook-changes-${date}.md"
+          cp dist/latest/changes.json "release/posthog-handbook-changes-${date}.json"
+          cp dist/latest/downloads/* release/
+      - name: Publish dated release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          date="$(node -e "console.log(require('./dist/latest/manifest.json').generatedAt)")"
+          tag="handbook-${date}"
+          if gh release view "$tag" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release edit "$tag" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "PostHog Handbook Library ${date}" \
+              --notes-file dist/latest/changes.md \
+              --latest
+          else
+            gh release create "$tag" release/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "PostHog Handbook Library ${date}" \
+              --notes-file dist/latest/changes.md \
+              --latest
+          fi
