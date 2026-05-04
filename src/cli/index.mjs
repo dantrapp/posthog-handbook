@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BASE_URL = "https://posthog.com";
+const PROJECT_REPO_URL = "https://github.com/dantrapp/posthog-handbook";
 const SOURCE_REPO = "PostHog/posthog.com";
 const SOURCE_REF = "master";
 const TREE_API = `https://api.github.com/repos/${SOURCE_REPO}/git/trees/${SOURCE_REF}?recursive=1`;
@@ -712,6 +713,7 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
       <div class="hero-actions">
         <a class="button primary large" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
         <a class="button large" href="#library-search">Search and browse</a>
+        <a class="button large" href="${PROJECT_REPO_URL}">View source repo</a>
       </div>
     </div>
   </header>
