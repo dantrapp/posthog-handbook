@@ -24,6 +24,18 @@ test("renders basic reader-safe markdown", () => {
   assert.match(html, /<ul>/);
 });
 
+test("adapts inline MDX components into readable text", () => {
+  const html = markdownToHtml('Handled by <TeamMember name="Lottie Coxon" />, <TeamMember name="Heidi Berton" />, and <TeamMember name="Daniel Hawkins" />.');
+  assert.match(html, /Handled by Lottie Coxon, Heidi Berton, and Daniel Hawkins\./);
+  assert.doesNotMatch(html, /TeamMember/);
+});
+
+test("preserves markdown children inside MDX wrapper components", () => {
+  const html = markdownToHtml("<Callout>\n\nImportant **reader** note.\n\n</Callout>");
+  assert.match(html, /Important <strong>reader<\/strong> note\./);
+  assert.doesNotMatch(html, /Callout/);
+});
+
 test("detects changed, added, removed, and moved pages from manifests", () => {
   const previous = {
     pages: [
@@ -58,4 +70,3 @@ test("writes zip files with an uncompressed first entry", () => {
   assert.equal(zip.slice(30, 38).toString("utf8"), "mimetype");
   assert.equal(zip.slice(38, 58).toString("utf8"), "application/epub+zip");
 });
-

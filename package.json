@@ -1,6 +1,6 @@
 {
   "name": "posthog-handbook-library",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "type": "module",
   "description": "An unofficial rebuildable publishing layer for PostHog's public handbook.",

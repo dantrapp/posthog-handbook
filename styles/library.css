@@ -282,6 +282,19 @@ th {
   padding: 10px 14px;
 }
 
+.build-details {
+  margin-top: 16px;
+}
+
+.build-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.build-details ul {
+  margin-bottom: 0;
+}
+
 @media print {
   body {
     background: white;

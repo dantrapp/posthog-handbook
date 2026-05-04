@@ -1,10 +1,10 @@
 # PostHog Handbook Library
 
-An unofficial, living reader edition of PostHog's public handbook.
+An unofficial, living reader edition of [PostHog's public handbook](https://posthog.com/handbook).
 
-PostHog's handbook changes constantly, so a normal ebook would go stale. This project rebuilds the handbook from the public source, publishes fresh reader editions, and explains what changed between editions.
+PostHog's [live handbook](https://posthog.com/handbook) changes constantly, so a normal ebook would go stale. This project rebuilds the handbook from the public source, publishes fresh reader editions, and explains what changed between editions.
 
-The live PostHog handbook remains the source of truth.
+The [live PostHog handbook](https://posthog.com/handbook) remains the source of truth.
 
 ## Use It
 
@@ -83,4 +83,3 @@ There is no manually maintained book here. There is only:
 - dated generated editions
 - clear source attribution
 - manifest-based change intelligence
-

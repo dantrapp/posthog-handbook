@@ -14,7 +14,7 @@ const TREE_API = `https://api.github.com/repos/${SOURCE_REPO}/git/trees/${SOURCE
 const RAW_BASE = `https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REF}/`;
 const GITHUB_BASE = `https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}/`;
 const USER_AGENT = "posthog-handbook-library/0.1";
-const GENERATOR_VERSION = "0.2.0";
+const GENERATOR_VERSION = "0.2.1";
 const COMPANY_ORDER = [
   "contents/handbook/why-does-posthog-exist.md",
   "contents/handbook/story.md",
@@ -288,24 +288,58 @@ function inferTitle(sourcePath, frontmatter, body) {
   return titleCaseSegment(fileName === "index" ? sectionFor(sourcePath) || "handbook" : fileName);
 }
 
+function mdxAttribute(attrs, name) {
+  const match = attrs.match(new RegExp(`${name}=(?:"([^"]+)"|'([^']+)'|{\\s*["']([^"']+)["']\\s*})`));
+  return match ? match[1] || match[2] || match[3] : null;
+}
+
+function adaptSelfClosingMdxComponent(componentName, attrs) {
+  if (componentName === "TeamMember") {
+    return mdxAttribute(attrs, "name") || "";
+  }
+  if (componentName === "NewsletterForm") {
+    return "";
+  }
+  return mdxAttribute(attrs, "title")
+    || mdxAttribute(attrs, "label")
+    || mdxAttribute(attrs, "name")
+    || "";
+}
+
+function adaptInlineMdx(line) {
+  return line.replace(/<([A-Z][A-Za-z0-9_.]*)\b([^>]*)\/>/g, (_match, componentName, attrs) => {
+    return adaptSelfClosingMdxComponent(componentName, attrs).trim();
+  });
+}
+
+function mdxWarnings(markdown) {
+  const componentNames = new Set();
+  for (const match of markdown.matchAll(/<\/?([A-Z][A-Za-z0-9_.]*)\b/g)) {
+    componentNames.add(match[1]);
+  }
+  if (!componentNames.size) return [];
+  return [{
+    code: "MDX_COMPONENT_STATIC_ADAPTER",
+    message: `Adapted interactive MDX components for static reading: ${[...componentNames].sort().join(", ")}.`,
+  }];
+}
+
 function normalizeMarkdown(markdown) {
   const { body } = stripFrontmatter(markdown);
   const lines = [];
-  let skippingComponent = false;
   for (const line of body.split("\n")) {
     const stripped = line.trim();
     if (stripped.startsWith("import ")) continue;
-    if (stripped.startsWith("<") && /^<\/?[A-Z]/.test(stripped)) {
-      if (!stripped.endsWith("/>") && !stripped.startsWith("</")) {
-        skippingComponent = true;
-      }
+    if (/^<\/[A-Z][A-Za-z0-9_.]*>\s*$/.test(stripped)) continue;
+    const blockComponent = stripped.match(/^<([A-Z][A-Za-z0-9_.]*)\b([^>]*)>\s*$/);
+    if (blockComponent) continue;
+    const selfClosingBlock = stripped.match(/^<([A-Z][A-Za-z0-9_.]*)\b([^>]*)\/>\s*$/);
+    if (selfClosingBlock) {
+      const adapted = adaptSelfClosingMdxComponent(selfClosingBlock[1], selfClosingBlock[2]);
+      if (adapted) lines.push(adapted);
       continue;
     }
-    if (skippingComponent) {
-      if (stripped.startsWith("</")) skippingComponent = false;
-      continue;
-    }
-    lines.push(line.replace(/\s+$/, ""));
+    lines.push(adaptInlineMdx(line).replace(/\s+$/, ""));
   }
   return lines.join("\n").trim();
 }
@@ -482,9 +516,7 @@ async function enrichPage(entry, index) {
     searchText: text,
     markdown,
     html: markdownToHtml(markdown),
-    warnings: markdown.includes("<") && /<\/?[A-Z]/.test(markdown)
-      ? [{ code: "MDX_COMPONENT_OMITTED", message: "One or more MDX components were omitted from the static reader output." }]
-      : [],
+    warnings: mdxWarnings(markdown),
   };
 }
 
@@ -672,20 +704,20 @@ function renderSection(section) {
 
 function renderPage(page) {
   const warnings = page.warnings.map((warning) => {
-    return `<p class="warning">${escapeHtml(warning.code)}: ${escapeHtml(warning.message)}</p>`;
+    return `<li><code>${escapeHtml(warning.code)}</code>: ${escapeHtml(warning.message)}</li>`;
   }).join("\n");
   const body = `<main class="site-shell reader">
   <p class="kicker"><a href="../index.html">PostHog Handbook Library</a>${page.section ? ` / ${escapeHtml(titleCaseSegment(page.section))}` : ""}</p>
   <article>
     <h1>${escapeHtml(page.title)}</h1>
     <p class="build-note">${page.wordCount.toLocaleString()} words. Estimated reading time: ${page.readingTimeMinutes} min.</p>
-    ${warnings}
     ${page.html}
   </article>
   <section class="source-list">
     <p>Canonical URL: <a href="${escapeHtml(page.canonicalUrl)}">${escapeHtml(page.canonicalUrl)}</a></p>
     <p>GitHub source: <a href="${escapeHtml(page.githubUrl)}">${escapeHtml(page.sourcePath)}</a></p>
     <p>Content hash: <code>${escapeHtml(page.contentHash.slice(0, 16))}</code></p>
+    ${warnings ? `<details class="build-details"><summary>Static reader notes</summary><ul>${warnings}</ul></details>` : ""}
   </section>
 </main>`;
   return htmlShell(page.title, body, "../assets/library.css");
