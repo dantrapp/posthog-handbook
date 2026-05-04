@@ -14,7 +14,7 @@ const TREE_API = `https://api.github.com/repos/${SOURCE_REPO}/git/trees/${SOURCE
 const RAW_BASE = `https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REF}/`;
 const GITHUB_BASE = `https://github.com/${SOURCE_REPO}/blob/${SOURCE_REF}/`;
 const USER_AGENT = "posthog-handbook-library/0.1";
-const GENERATOR_VERSION = "0.2.1";
+const GENERATOR_VERSION = "0.2.2";
 const COMPANY_ORDER = [
   "contents/handbook/why-does-posthog-exist.md",
   "contents/handbook/story.md",
@@ -629,37 +629,52 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
   const sectionItems = sections.map((section) => {
     return `<li><a href="sections/${section.id}.html">${escapeHtml(section.title)}</a> <span>${section.pages.length} pages</span></li>`;
   }).join("\n");
-  const publicArtifacts = artifacts.filter((artifact) => artifact.public);
-  const artifactItems = publicArtifacts.map((artifact) => `<li>
-    <a href="${escapeHtml(artifact.path)}">${escapeHtml(artifact.label)}</a>
-    <span>${escapeHtml(artifact.type)}${artifact.bytes ? ` · ${Math.ceil(artifact.bytes / 1024).toLocaleString()} KB` : ""}</span>
-  </li>`).join("\n");
-  const featured = [
-    artifacts.find((artifact) => artifact.type === "html-archive"),
-    artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "library"),
-    artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "company"),
-    artifacts.find((artifact) => artifact.type === "print-html"),
-  ].filter(Boolean);
-  const featuredItems = featured.map((artifact) => `<a class="download-card" href="${escapeHtml(artifact.path)}">
-    <strong>${escapeHtml(artifact.label)}</strong>
-    <span>${escapeHtml(artifact.type)}${artifact.bytes ? ` · ${Math.ceil(artifact.bytes / 1024).toLocaleString()} KB` : ""}</span>
+  const bytes = (artifact) => artifact?.bytes ? `${Math.ceil(artifact.bytes / 1024).toLocaleString()} KB` : "";
+  const libraryEbook = artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "library");
+  const companyEbook = artifacts.find((artifact) => artifact.type === "epub" && artifact.edition === "company");
+  const htmlArchive = artifacts.find((artifact) => artifact.type === "html-archive");
+  const printHtml = artifacts.find((artifact) => artifact.type === "print-html");
+  const sectionEbooks = artifacts
+    .filter((artifact) => artifact.type === "epub" && artifact.edition === "section")
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const sectionEbookItems = sectionEbooks.map((artifact) => `<a class="small-download" href="${escapeHtml(artifact.path)}">
+    <strong>${escapeHtml(artifact.label.replace(" eBook", ""))}</strong>
+    <span>Topic-only eBook${bytes(artifact) ? ` · ${bytes(artifact)}` : ""}</span>
   </a>`).join("\n");
+  const dataItems = [
+    { label: "Manifest JSON", path: manifestPath, note: "machine-readable build inventory" },
+    { label: "Search index JSON", path: "search-index.json", note: "generated reader search data" },
+    { label: "Change digest", path: "changes.md", note: "what changed since the previous edition" },
+    { label: "Change digest JSON", path: "changes.json", note: "machine-readable changes" },
+    companyEbook && { label: "Company narrative eBook", path: companyEbook.path, note: bytes(companyEbook) },
+    libraryEbook && { label: "Complete Handbook eBook", path: libraryEbook.path, note: bytes(libraryEbook) },
+    htmlArchive && { label: "Complete HTML archive", path: htmlArchive.path, note: bytes(htmlArchive) },
+    printHtml && { label: "Print-ready HTML", path: printHtml.path, note: bytes(printHtml) },
+  ].filter(Boolean).map((item) => `<li><a href="${escapeHtml(item.path)}">${escapeHtml(item.label)}</a>${item.note ? ` <span>${escapeHtml(item.note)}</span>` : ""}</li>`).join("\n");
+  const warningCount = pages.filter((page) => page.warnings.length).length;
   const body = `<main class="site-shell">
-  <header class="library-header">
+  <header class="library-header hero">
     <p class="kicker">Unofficial living edition · Generated ${escapeHtml(buildDate)}</p>
     <h1>PostHog Handbook Library</h1>
-    <p class="build-note">Generated ${escapeHtml(buildDate)} from <a href="https://github.com/PostHog/posthog.com/tree/master/contents/handbook">PostHog/posthog.com contents/handbook</a>. The live handbook remains canonical.</p>
-    <div class="actions">
-      <a class="button primary" href="company.html">Read the company edition</a>
-      <a class="button" href="downloads/posthog-handbook-library-${escapeHtml(buildDate)}.epub">Download complete EPUB</a>
-      <a class="button" href="changes.md">See what changed</a>
+    <p class="lede">Search and browse the generated Handbook, then download the complete mobile-friendly eBook when you are ready.</p>
+    <p class="build-note">Built from <a href="https://posthog.com/handbook">PostHog's live handbook</a>. The live handbook remains canonical.</p>
+    <div class="hero-panel">
+      <div>
+        <p class="eyebrow">Recommended</p>
+        <h2>Get the full Handbook eBook</h2>
+        <p>One file with all ${pages.length} discovered pages, ready for Apple Books, Kindle apps, tablets, and offline reading.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="button primary large" href="${escapeHtml(libraryEbook?.path || "#")}">Download full eBook</a>
+        <a class="button large" href="#library-search">Search and browse</a>
+      </div>
     </div>
   </header>
   <section class="summary-grid" aria-label="Build summary">
-    <div class="metric"><strong>${pages.length}</strong> pages discovered</div>
-    <div class="metric"><strong>${sections.length}</strong> sections</div>
+    <div class="metric"><strong>${pages.length}</strong> pages in the full eBook</div>
     <div class="metric"><strong>${pages.reduce((sum, page) => sum + page.wordCount, 0).toLocaleString()}</strong> words</div>
-    <div class="metric"><strong>${pages.filter((page) => page.warnings.length).length}</strong> pages with warnings</div>
+    <div class="metric"><strong>${sections.length}</strong> web sections for browsing</div>
+    <div class="metric"><strong>Weekly</strong> automatic rebuilds</div>
   </section>
   <section class="reader-tools">
     <label for="library-search">Search the generated handbook</label>
@@ -667,23 +682,56 @@ function renderIndex({ pages, sections, buildDate, manifestPath, artifacts = [] 
     <p class="search-status" data-search-status>Loading search index...</p>
     <ol class="search-results" data-search-results></ol>
   </section>
-  <section>
-    <h2>Best Starting Points</h2>
-    <div class="download-grid">${featuredItems}</div>
+  <section class="choice-section">
+    <h2>Choose Your Reading Mode</h2>
+    <div class="download-grid primary-downloads">
+      <a class="download-card featured-download" href="${escapeHtml(libraryEbook?.path || "#")}">
+        <span class="pill">Best for most readers</span>
+        <strong>Complete Handbook eBook</strong>
+        <span>All ${pages.length} pages in one mobile-friendly file${bytes(libraryEbook) ? ` · ${bytes(libraryEbook)}` : ""}</span>
+      </a>
+      <a class="download-card" href="company.html">
+        <strong>Browse the Web Version</strong>
+        <span>Use the generated pages when you want links, sections, and search</span>
+      </a>
+      <a class="download-card" href="${escapeHtml(companyEbook?.path || "#")}">
+        <strong>Company Narrative eBook</strong>
+        <span>A shorter front-door edition for casual reading${bytes(companyEbook) ? ` · ${bytes(companyEbook)}` : ""}</span>
+      </a>
+      <a class="download-card" href="${escapeHtml(printHtml?.path || "#")}">
+        <strong>Print or Save as PDF</strong>
+        <span>Open this HTML page and use your browser's print dialog</span>
+      </a>
+    </div>
   </section>
   <section>
-    <h2>Sections</h2>
+    <h2>Browse by Section</h2>
+    <p class="section-note">These links are the web version of the Handbook organized by topic. You do not need to choose a section to get the full eBook.</p>
     <ol class="section-list">${sectionItems}</ol>
+    <details class="optional-panel">
+      <summary>Download topic-only eBooks</summary>
+      <p>If you only want one part of the Handbook, use these smaller files. Otherwise, download the complete Handbook eBook above.</p>
+      <div class="compact-download-grid">${sectionEbookItems}</div>
+    </details>
   </section>
-  <section>
-    <h2>Downloads and Data</h2>
-    <ul class="toc">
-      <li><a href="${escapeHtml(manifestPath)}">Manifest JSON</a></li>
-      <li><a href="search-index.json">Search index JSON</a></li>
-      <li><a href="changes.md">Change digest</a></li>
-      <li><a href="company.html">Company narrative edition</a></li>
-      ${artifactItems}
-    </ul>
+  <section class="supporting-info">
+    <h2>Updates and Technical Files</h2>
+    <p class="section-note">This area is optional. It is here for people who want to inspect changes, archive the web version, or reuse the generated data.</p>
+    <div class="supporting-grid">
+      <a class="download-card" href="changes.md">
+        <strong>What changed?</strong>
+        <span>A readable change digest for this edition</span>
+      </a>
+      <a class="download-card" href="${escapeHtml(htmlArchive?.path || "#")}">
+        <strong>Offline web archive</strong>
+        <span>The complete generated website as a ZIP${bytes(htmlArchive) ? ` · ${bytes(htmlArchive)}` : ""}</span>
+      </a>
+    </div>
+    <details class="optional-panel">
+      <summary>Developer data and build notes</summary>
+      <p>${warningCount} pages include static reader notes where interactive website components were adapted for eBook and web reading.</p>
+      <ul class="toc data-list">${dataItems}</ul>
+    </details>
   </section>
 </main>`;
   return htmlShell("PostHog Handbook Library", body.replace("</main>", `<script src="assets/search.js"></script>\n</main>`));
@@ -1113,8 +1161,8 @@ async function commandBuild(args) {
     subtitle: "Complete generated edition",
     buildDate,
   });
-  artifactDrafts.push({ type: "epub", edition: "company", label: "Company narrative EPUB", path: companyEpub, public: true });
-  artifactDrafts.push({ type: "epub", edition: "library", label: "Complete library EPUB", path: libraryEpub, public: true });
+  artifactDrafts.push({ type: "epub", edition: "company", label: "Company narrative eBook", path: companyEpub, public: true });
+  artifactDrafts.push({ type: "epub", edition: "library", label: "Complete Handbook eBook", path: libraryEpub, public: true });
 
   for (const section of sectionVolumes) {
     const sectionPath = `downloads/posthog-handbook-${section.id}-${buildDate}.epub`;
@@ -1125,7 +1173,7 @@ async function commandBuild(args) {
       subtitle: `${section.title} section volume`,
       buildDate,
     });
-    artifactDrafts.push({ type: "epub", edition: "section", section: section.id, label: `${section.title} EPUB`, path: sectionPath, public: true });
+    artifactDrafts.push({ type: "epub", edition: "section", section: section.id, label: `${section.title} eBook`, path: sectionPath, public: true });
   }
 
   const artifactsBeforeDigest = [];

@@ -1,8 +1,8 @@
 # PostHog Handbook Library
 
-An unofficial, living reader edition of [PostHog's public handbook](https://posthog.com/handbook).
+An unofficial, living reader edition of PostHog's public handbook.
 
-PostHog's [live handbook](https://posthog.com/handbook) changes constantly, so a normal ebook would go stale. This project rebuilds the handbook from the public source, publishes fresh reader editions, and explains what changed between editions.
+PostHog's handbook changes constantly, so a normal ebook would go stale. This project rebuilds the handbook from the public source, publishes fresh reader editions, and explains what changed between editions.
 
 The [live PostHog handbook](https://posthog.com/handbook) remains the source of truth.
 
@@ -10,10 +10,9 @@ The [live PostHog handbook](https://posthog.com/handbook) remains the source of 
 
 No terminal required.
 
-- Read online: https://dantrapp.github.io/posthog-handbook/
-- Download the latest EPUBs and ZIP: https://github.com/dantrapp/posthog-handbook/releases/latest
-- Start with the company narrative edition if you want the readable front-door version.
-- Use the section EPUBs if you only care about Engineering, People, Growth, Product, and so on.
+- Open the searchable reader: https://dantrapp.github.io/posthog-handbook/
+- Use it to search the handbook, browse by section, and download the full mobile-friendly eBook.
+- Optional smaller section eBooks are available inside the reader for people who only want one topic.
 
 ## What It Builds
 
@@ -22,9 +21,9 @@ Every generated edition includes source links and a generated date.
 - Complete HTML handbook library
 - Searchable hosted reader site
 - Company narrative HTML edition
-- Complete-library EPUB
-- Company narrative EPUB
-- Section-level EPUB volumes
+- Complete-library eBook
+- Company narrative eBook
+- Section-level eBook volumes
 - Print/PDF-ready HTML
 - Downloadable HTML library ZIP
 - Full source and artifact manifest
@@ -40,7 +39,7 @@ GitHub Actions does the living-book work:
 4. Compares the new manifest against the previous released manifest.
 5. Generates Markdown and JSON change digests.
 6. Publishes the reader site to GitHub Pages.
-7. Publishes a dated GitHub Release with EPUBs, the HTML archive, manifest, and changes.
+7. Publishes a dated GitHub Release with eBooks, the HTML archive, manifest, and changes.
 
 That is the product idea: do not pretend the handbook is stable. Rebuild it, timestamp it, attribute it, and show the diff.
 

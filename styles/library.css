@@ -5,6 +5,7 @@
   --line: #ded9ce;
   --paper: #fbfaf6;
   --wash: #eef3ef;
+  --warm: #fff0d8;
   --accent: #d45f2c;
   --accent-dark: #9d3f19;
   --evergreen: #24614f;
@@ -121,6 +122,54 @@ th {
   padding-bottom: 28px;
 }
 
+.hero {
+  display: grid;
+  gap: 22px;
+}
+
+.lede {
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
+  margin: 0;
+  max-width: 780px;
+}
+
+.hero-panel {
+  align-items: center;
+  background: var(--warm);
+  border: 1px solid #edcf9f;
+  border-radius: 8px;
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 22px;
+}
+
+.hero-panel h2 {
+  border: 0;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.hero-panel p {
+  margin: 0;
+}
+
+.eyebrow,
+.pill {
+  color: var(--accent-dark);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.hero-actions {
+  display: grid;
+  gap: 10px;
+  min-width: 220px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -146,6 +195,11 @@ th {
   background: var(--ink);
   border-color: var(--ink);
   color: white;
+}
+
+.button.large {
+  min-height: 52px;
+  padding: 12px 18px;
 }
 
 .summary-grid {
@@ -229,6 +283,10 @@ th {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.primary-downloads {
+  grid-template-columns: minmax(260px, 1.3fr) repeat(auto-fit, minmax(210px, 1fr));
+}
+
 .download-card {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -236,6 +294,11 @@ th {
   display: block;
   padding: 16px;
   text-decoration: none;
+}
+
+.featured-download {
+  background: #f2f7f3;
+  border-color: #b7d0bf;
 }
 
 .download-card:hover,
@@ -258,6 +321,18 @@ th {
   font-size: 0.9rem;
 }
 
+.download-card .pill {
+  color: var(--evergreen);
+  margin-bottom: 8px;
+}
+
+.section-note {
+  color: var(--muted);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin-top: -8px;
+  max-width: 760px;
+}
+
 .section-list,
 .toc {
   columns: 2 280px;
@@ -268,6 +343,52 @@ th {
 .toc li {
   break-inside: avoid;
   margin: 0 0 8px;
+}
+
+.optional-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 24px;
+  padding: 14px 16px;
+}
+
+.optional-panel summary {
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 800;
+}
+
+.compact-download-grid,
+.supporting-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 14px;
+}
+
+.small-download {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  display: block;
+  padding: 12px;
+  text-decoration: none;
+}
+
+.small-download strong,
+.small-download span {
+  display: block;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.small-download span,
+.data-list span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.supporting-info {
+  margin-bottom: 24px;
 }
 
 .source-list {
@@ -307,5 +428,15 @@ th {
 
   a {
     color: inherit;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-actions {
+    min-width: 0;
   }
 }
