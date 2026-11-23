@@ -17,10 +17,8 @@ jobs:
     permissions:
       contents: write
       pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy-pages.outputs.page_url }}
+    outputs:
+      pages-artifact: ${{ steps.pages-artifact.outputs.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,15 +49,16 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Name reader site artifact
+        if: github.event_name != 'pull_request'
+        id: pages-artifact
+        run: echo "name=github-pages-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
       - name: Upload reader site
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
+          name: ${{ steps.pages-artifact.outputs.name }}
           path: dist/latest
-      - name: Deploy reader site
-        if: github.event_name != 'pull_request'
-        id: deploy-pages
-        uses: actions/deploy-pages@v4
       - name: Prepare release files
         if: github.event_name != 'pull_request'
         run: |
@@ -90,3 +89,20 @@ jobs:
               --notes-file dist/latest/changes.md \
               --latest
           fi
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy-pages.outputs.page_url }}
+    steps:
+      - name: Deploy reader site
+        id: deploy-pages
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: ${{ needs.build.outputs.pages-artifact }}

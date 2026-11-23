@@ -5,10 +5,26 @@ import {
   buildZip,
   canonicalPath,
   compareManifests,
+  fetchText,
   markdownToHtml,
   sectionFor,
   serializeDiff,
 } from "../src/cli/index.mjs";
+
+test("retries a temporary upstream fetch failure", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => new Response("Handbook page"));
+  fetch.mock.mockImplementationOnce(async () => new Response("Backend unavailable", { status: 503 }));
+
+  assert.equal(await fetchText("https://example.test/handbook"), "Handbook page");
+  assert.equal(fetch.mock.callCount(), 2);
+});
+
+test("fails immediately for a missing handbook page", async (t) => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 404 }));
+
+  await assert.rejects(fetchText("https://example.test/handbook"), /Fetch failed 404/);
+  assert.equal(fetch.mock.callCount(), 1);
+});
 
 test("maps handbook source paths to canonical PostHog URLs", () => {
   assert.equal(canonicalPath("contents/handbook/engineering/code-review.md"), "/handbook/engineering/code-review");

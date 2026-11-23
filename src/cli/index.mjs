@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { readFile, writeFile, mkdir, cp, access, readdir, stat, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const BASE_URL = "https://posthog.com";
@@ -217,16 +218,22 @@ async function fileHash(filePath) {
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "application/vnd.github+json, text/plain, */*",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Fetch failed ${response.status} ${response.statusText}: ${url}`);
+  for (const retryDelay of [1000, 2000, 4000, 0]) {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "application/vnd.github+json, text/plain, */*",
+      },
+    });
+    if (response.ok) return response.text();
+
+    const retryable = [500, 502, 503, 504].includes(response.status);
+    await response.body?.cancel();
+    if (!retryable || retryDelay === 0) {
+      throw new Error(`Fetch failed ${response.status} ${response.statusText}: ${url}`);
+    }
+    await delay(retryDelay);
   }
-  return response.text();
 }
 
 async function fetchJson(url) {
@@ -1707,6 +1714,7 @@ export {
   canonicalPath,
   compareManifests,
   articleBriefItems,
+  fetchText,
   markdownToHtml,
   sectionFor,
   serializeDiff,
